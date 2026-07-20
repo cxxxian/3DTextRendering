@@ -4,5 +4,15 @@ cmake-build-*/
 .DS_Store
 imgui.ini
 
-# 若本地再生成 glad 临时文件
+# 依赖下载缓存与拉取产物（实体不进仓，见 deps.json + scripts/fetch_deps.py）
+.deps_cache/
+third_party/freetype/
+third_party/harfbuzz/
+third_party/glm/
+third_party/imgui/
+third_party/libtess2/
+third_party/earcut/
+third_party/stb/
+third_party/glad/
+third_party/.deps_lock.json
 third_party/glad_tmp/
