@@ -1,0 +1,8 @@
+# 忽略构建产物
+build/
+cmake-build-*/
+.DS_Store
+imgui.ini
+
+# 若本地再生成 glad 临时文件
+third_party/glad_tmp/
