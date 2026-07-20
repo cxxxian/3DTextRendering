@@ -1,0 +1,27 @@
+{
+    "category_id": 706,
+    "category_name": "",
+    "chars_config": {
+        "url": ""
+    },
+    "filename": "",
+    "font_domain": "https://xiuxiu-material-center.meitudata.com",
+    "font_id": 8850,
+    "font_name": "AbramoScript",
+    "font_type": 0,
+    "font_version": "",
+    "grant_scope": [
+        3
+    ],
+    "nickname": "AbramoScript",
+    "postscript_name": "AbramoScript",
+    "preload": 0,
+    "preview": "https://xiuxiu-material-center.meitudata.com/material/image/61d3fe234e3b8520.png!thumb-w321-webp75",
+    "size": 72395,
+    "threshold_new": 8,
+    "thumbnail_black": "https://xiuxiu-material-center.meitudata.com/material/image/61d3fe234e3b8520.png!thumb-w321-webp75",
+    "thumbnail_blue": "https://xiuxiu-material-center.meitudata.com/material/image/61d3fe1854c513657.png!thumb-w321-webp75",
+    "thumbnail_white": "https://xiuxiu-material-center.meitudata.com/material/image/61d3fe27cf3b77827.png!thumb-w321-webp75",
+    "toast": 0,
+    "url": "https://xiuxiu-material-center.meitudata.com/material/zip/61d3fdee7e2f78093.zip"
+}

@@ -1,0 +1,73 @@
+{
+  "note": "第三方依赖清单。克隆后执行: python3 scripts/fetch_deps.py",
+  "cache_dir": ".deps_cache",
+  "deps": [
+    {
+      "name": "freetype",
+      "version": "2.14.3",
+      "type": "archive",
+      "url": "https://gitlab.freedesktop.org/freetype/freetype/-/archive/VER-2-14-3/freetype-VER-2-14-3.tar.gz",
+      "strip_components": 1,
+      "dest": "third_party/freetype",
+      "marker": "CMakeLists.txt"
+    },
+    {
+      "name": "harfbuzz",
+      "version": "10.2.0",
+      "type": "archive",
+      "url": "https://github.com/harfbuzz/harfbuzz/archive/refs/tags/10.2.0.tar.gz",
+      "strip_components": 1,
+      "dest": "third_party/harfbuzz",
+      "marker": "CMakeLists.txt"
+    },
+    {
+      "name": "glm",
+      "version": "1.0.1",
+      "type": "archive",
+      "url": "https://github.com/g-truc/glm/archive/refs/tags/1.0.1.tar.gz",
+      "strip_components": 1,
+      "dest": "third_party/glm",
+      "marker": "glm/glm.hpp"
+    },
+    {
+      "name": "imgui",
+      "version": "1.91.8",
+      "type": "archive",
+      "url": "https://github.com/ocornut/imgui/archive/refs/tags/v1.91.8.tar.gz",
+      "strip_components": 1,
+      "dest": "third_party/imgui",
+      "marker": "imgui.h"
+    },
+    {
+      "name": "libtess2",
+      "version": "1.0.2",
+      "type": "archive",
+      "url": "https://github.com/memononen/libtess2/archive/refs/tags/v1.0.2.tar.gz",
+      "strip_components": 1,
+      "dest": "third_party/libtess2",
+      "marker": "Source/tess.c"
+    },
+    {
+      "name": "earcut",
+      "version": "2.2.4",
+      "type": "file",
+      "url": "https://raw.githubusercontent.com/mapbox/earcut.hpp/v2.2.4/include/mapbox/earcut.hpp",
+      "dest": "third_party/earcut/earcut.hpp"
+    },
+    {
+      "name": "stb_image",
+      "version": "2.30",
+      "type": "file",
+      "url": "https://raw.githubusercontent.com/nothings/stb/013ac3beddff3dbffafd5177e7972067cd2b5083/stb_image.h",
+      "dest": "third_party/stb/stb_image.h"
+    },
+    {
+      "name": "glad",
+      "version": "2.0.8-gl33core",
+      "type": "glad_generate",
+      "api": "gl:core=3.3",
+      "dest": "third_party/glad",
+      "marker": "src/gl.c"
+    }
+  ]
+}

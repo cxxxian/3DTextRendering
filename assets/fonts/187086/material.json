@@ -1,0 +1,49 @@
+{
+    "category_id": 704,
+    "category_name": "简体",
+    "chars_config": {
+        "url": ""
+    },
+    "filename": "",
+    "font_domain": "https://xiuxiu-material-center.meitudata.com",
+    "font_id": 187086,
+    "font_name": "FZZIHS--GB1-0",
+    "font_type": 0,
+    "font_version": "",
+    "grant_scope": [
+        1,
+        3
+    ],
+    "nickname": "方正兹黑 简",
+    "postscript_name": "FZZIHS--GB1-0",
+    "preload": 0,
+    "preview": "https://xiuxiu-material-center.meitudata.com/material/image/69eb433dcd3654029.png!thumb-w321-webp75",
+    "size": 865118,
+    "subset_base_ext_zip_file": {
+        "create_time": 1777022737,
+        "md5": "",
+        "name": "1777022735216.zip",
+        "size": 7668,
+        "url": "https://font-tool.meitudata.com/font_material/1777022735216.zip"
+    },
+    "subset_base_zip_file": {
+        "create_time": 1777022737,
+        "md5": "",
+        "name": "1777022734708.zip",
+        "size": 426351,
+        "url": "https://font-tool.meitudata.com/font_material/1777022734708.zip"
+    },
+    "subset_long_tail_zip_file": {
+        "create_time": 1777022738,
+        "md5": "",
+        "name": "1777022735796.zip",
+        "size": 459136,
+        "url": "https://font-tool.meitudata.com/font_material/1777022735796.zip"
+    },
+    "threshold_new": 0,
+    "thumbnail_black": "https://xiuxiu-material-center.meitudata.com/material/image/69eb433dcd3654029.png!thumb-w321-webp75",
+    "thumbnail_blue": "https://xiuxiu-material-center.meitudata.com/material/image/69eb433c7402f2777.png!thumb-w321-webp75",
+    "thumbnail_white": "https://xiuxiu-material-center.meitudata.com/material/image/69eb4340743146174.png!thumb-w321-webp75",
+    "toast": 0,
+    "url": "https://xiuxiu-material-center.meitudata.com/material/zip/69eb36f760e6d2018.zip"
+}

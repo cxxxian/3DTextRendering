@@ -1,0 +1,29 @@
+{
+    "category_id": 705,
+    "category_name": "",
+    "chars_config": {
+        "url": ""
+    },
+    "filename": "",
+    "font_domain": "https://xiuxiu-material-center.meitudata.com",
+    "font_id": 8805,
+    "font_name": "DFWaWaStd-W7",
+    "font_type": 0,
+    "font_version": "",
+    "grant_scope": [
+        2,
+        3,
+        4
+    ],
+    "nickname": "華康娃娃體",
+    "postscript_name": "DFWaWaStd-W7",
+    "preload": 0,
+    "preview": "https://xiuxiu-material-center.meitudata.com/material/image/60fe8ed5cc8f87872.png!thumb-w321-webp75",
+    "size": 5176875,
+    "threshold_new": 8,
+    "thumbnail_black": "https://xiuxiu-material-center.meitudata.com/material/image/60fe8ed5cc8f87872.png!thumb-w321-webp75",
+    "thumbnail_blue": "https://xiuxiu-material-center.meitudata.com/material/image/60fe8ecd984446830.png!thumb-w321-webp75",
+    "thumbnail_white": "https://xiuxiu-material-center.meitudata.com/material/image/60fe8edf0f3c86361.png!thumb-w321-webp75",
+    "toast": 1,
+    "url": "https://xiuxiu-material-center.meitudata.com/material/zip/66d67e3268ce39619.zip"
+}

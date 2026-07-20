@@ -1,0 +1,124 @@
+#pragma once
+/*
+ * OpenGL 绘制：整句 mesh / 逐字 glyph，Lambert·Phong·PBR·Glass 四套着色器。
+ */
+
+#include "mesh/mesh_extrude.h"
+#include "render/light.h"
+#include "text/text_layout.h"
+
+#include <glm/glm.hpp>
+
+#include <string>
+#include <vector>
+
+namespace text3d {
+
+enum class ShadingModel {
+    Lambert = 0,
+    Phong = 1,
+    Pbr = 2,
+    Glass = 3,
+};
+
+struct DrawParams {
+    ShadingModel shading = ShadingModel::Pbr;
+    DirectionalLight light;
+    glm::vec3 camera_pos{0.f, 0.f, 3.5f};
+    glm::vec3 albedo{0.92f, 0.88f, 0.78f};
+    float metallic = 0.f;
+    float roughness = 0.45f;
+    float shininess = 32.f;
+    float opacity = 0.28f;      // Glass：正面基础不透明度
+    float env_strength = 1.6f;  // Glass：环境反射强度
+
+    // PBR 贴图（0 = 未用）
+    unsigned int albedo_map = 0;
+    unsigned int orm_map = 0;
+    unsigned int normal_map = 0;
+    int orm_layout = 0;  // 0=ORM，1=glTF MR
+};
+
+class Renderer {
+public:
+    Renderer() = default;
+    ~Renderer();
+
+    Renderer(const Renderer&) = delete;
+    Renderer& operator=(const Renderer&) = delete;
+
+    bool init(const std::string& shader_dir);
+
+    void upload_mesh(const Mesh& mesh);
+    void draw(const float* mvp16, const float* model16, const DrawParams& params) const;
+
+    void upload_glyphs(const std::vector<GlyphInstance>& glyphs);
+    void draw_glyph(int index, const float* mvp16, const float* model16,
+                    const DrawParams& params) const;
+    int glyph_count() const { return static_cast<int>(glyphs_.size()); }
+
+    bool has_mesh() const { return index_count_ > 0; }
+    bool has_glyphs() const { return !glyphs_.empty(); }
+
+    int vertex_count() const { return vertex_count_; }
+    int triangle_count() const { return index_count_ / 3; }
+
+private:
+    struct GpuGlyph {
+        unsigned int vao = 0;
+        unsigned int vbo = 0;
+        unsigned int ebo = 0;
+        int index_count = 0;
+    };
+
+    struct ProgramLocs {
+        unsigned int program = 0;
+        int mvp = -1;
+        int model = -1;
+        int light_dir = -1;
+        int light_color = -1;
+        int camera_pos = -1;
+        int albedo = -1;
+        int ambient = -1;
+        int metallic = -1;
+        int roughness = -1;
+        int shininess = -1;
+        int opacity = -1;
+        int env_strength = -1;
+        int use_albedo_map = -1;
+        int use_orm_map = -1;
+        int use_normal_map = -1;
+        int orm_layout = -1;
+        int albedo_map = -1;
+        int orm_map = -1;
+        int normal_map = -1;
+    };
+
+    void clear_merged_();
+    void clear_glyphs_();
+    void upload_into_(unsigned int vao, unsigned int vbo, unsigned int ebo,
+                      const Mesh& mesh, int& out_index_count);
+    bool load_program_(const std::string& shader_dir, const char* frag_name,
+                       ProgramLocs& out);
+    void cache_locations_(ProgramLocs& locs);
+    const ProgramLocs& program_for_(ShadingModel shading) const;
+    void bind_draw_params_(const ProgramLocs& locs, const DrawParams& params) const;
+    void draw_with_(const ProgramLocs& locs, unsigned int vao, int index_count,
+                    const float* mvp16, const float* model16,
+                    const DrawParams& params) const;
+
+    ProgramLocs lambert_{};
+    ProgramLocs phong_{};
+    ProgramLocs pbr_{};
+    ProgramLocs glass_{};
+
+    unsigned int vao_ = 0;
+    unsigned int vbo_ = 0;
+    unsigned int ebo_ = 0;
+    int index_count_ = 0;
+    int vertex_count_ = 0;
+
+    std::vector<GpuGlyph> glyphs_;
+};
+
+}  // namespace text3d

@@ -1,0 +1,29 @@
+{
+    "category_id": 706,
+    "category_name": "",
+    "chars_config": {
+        "url": ""
+    },
+    "filename": "",
+    "font_domain": "https://xiuxiu-material-center.meitudata.com",
+    "font_id": 184283,
+    "font_name": "TokyoDreamsPlain-Regular",
+    "font_type": 0,
+    "font_version": "",
+    "grant_scope": [
+        1,
+        2,
+        3
+    ],
+    "nickname": "Tokyo-Dreams-Display-Ligature-Serif",
+    "postscript_name": "TokyoDreamsPlain-Regular",
+    "preload": 0,
+    "preview": "https://xiuxiu-material-center.meitudata.com/material/image/67654c3dce8822411.png!thumb-w321-webp75",
+    "size": 14443,
+    "threshold_new": 8,
+    "thumbnail_black": "https://xiuxiu-material-center.meitudata.com/material/image/67654c3dce8822411.png!thumb-w321-webp75",
+    "thumbnail_blue": "https://xiuxiu-material-center.meitudata.com/material/image/67654c3c41a11383.png!thumb-w321-webp75",
+    "thumbnail_white": "https://xiuxiu-material-center.meitudata.com/material/image/67654c3f18a339335.png!thumb-w321-webp75",
+    "toast": 0,
+    "url": "https://xiuxiu-material-center.meitudata.com/material/zip/67629c0dc86bb9277.zip"
+}
