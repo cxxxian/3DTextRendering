@@ -4,12 +4,14 @@
 
 #include "mesh/mesh_offset_tess.h"
 
+#include "mesh/contour_clean.h"
 #include "mesh/mesh_geom.h"
 
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <iostream>
+#include <string>
 #include <vector>
 
 #include "earcut.hpp"
@@ -17,8 +19,6 @@
 
 namespace text3d {
 namespace {
-
-TessBackend g_tess_backend = TessBackend::Earcut;
 
 constexpr float kMiterLimit = 4.f;
 constexpr int kBinSearchIters = 8;
@@ -156,12 +156,24 @@ bool build_offset_outline(const GlyphOutline& outline, float amount, GlyphOutlin
     return offset_looks_valid(outline, out);
 }
 
-bool offset_and_tess_ok(const GlyphOutline& outline, float amount, GlyphOutline& inner,
-                        std::vector<float>& xy, std::vector<unsigned int>& tris) {
+bool offset_and_tess_ok(const GlyphOutline& outline, float amount, TessMode mode,
+                        GlyphOutline& inner, std::vector<float>& xy,
+                        std::vector<unsigned int>& tris, std::string* fallback_reason) {
     if (!build_offset_outline(outline, amount, inner)) {
         return false;
     }
-    return try_tessellate(inner, xy, tris);
+    // 内缩环与外环按下标配对，不能丢环；只清点 + 统一绕向
+    CleanOptions opt;
+    opt.drop_tiny_contours = false;
+    if (!clean_glyph_outline(inner, opt)) {
+        return false;
+    }
+    for (const Contour& c : inner.contours) {
+        if (c.points.size() < 3) {
+            return false;
+        }
+    }
+    return try_tessellate(inner, mode, xy, tris, fallback_reason);
 }
 
 float dist_point_segment(float px, float py, float ax, float ay, float bx, float by) {
@@ -182,87 +194,6 @@ float dist_point_segment(float px, float py, float ax, float ay, float bx, float
     return std::sqrt(dx * dx + dy * dy);
 }
 
-}  // namespace
-
-float clamp_edge_radius(float radius, float depth) {
-    if (!(radius > 0.f) || !(depth > 0.f)) {
-        return 0.f;
-    }
-    const float max_b = depth * 0.5f - 1e-3f;
-    if (max_b <= 0.f) {
-        return 0.f;
-    }
-    return std::min(radius, max_b);
-}
-
-float estimate_min_half_width(const GlyphOutline& outline) {
-    float min_d = 1e30f;
-    bool any = false;
-    for (const Contour& c : outline.contours) {
-        const size_t n = c.points.size();
-        if (n < 4) {
-            continue;
-        }
-        for (size_t i = 0; i < n; ++i) {
-            const Vec2& p = c.points[i];
-            for (size_t j = 0; j < n; ++j) {
-                const size_t j1 = (j + 1) % n;
-                // 跳过邻边与次邻边，否则自身顶点距离≈0
-                if (j == i || j1 == i || (j + n - 1) % n == i) {
-                    continue;
-                }
-                if ((j + 2) % n == i || (i + 2) % n == j) {
-                    continue;
-                }
-                const float d = dist_point_segment(p.x, p.y, c.points[j].x, c.points[j].y,
-                                                   c.points[j1].x, c.points[j1].y);
-                if (d > 1e-3f) {
-                    min_d = std::min(min_d, d);
-                    any = true;
-                }
-            }
-        }
-    }
-    if (!any || !(min_d < 1e29f)) {
-        float minx = 0.f, miny = 0.f, maxx = 0.f, maxy = 0.f;
-        outline_bounds(outline, minx, miny, maxx, maxy);
-        return 0.25f * std::min(maxx - minx, maxy - miny);
-    }
-    return 0.5f * min_d;
-}
-
-float max_safe_edge_radius(const GlyphOutline& outline, float depth) {
-    const float by_depth = clamp_edge_radius(1e30f, depth);
-    const float by_stroke = estimate_min_half_width(outline) * 0.9f;
-    if (!(by_stroke > 0.f)) {
-        return 0.f;
-    }
-    return std::min(by_depth, by_stroke);
-}
-
-void set_tess_backend(TessBackend backend) {
-    g_tess_backend = backend;
-}
-
-TessBackend get_tess_backend() {
-    return g_tess_backend;
-}
-
-const char* tess_backend_name(TessBackend backend) {
-    switch (backend) {
-        case TessBackend::Earcut:
-            return "earcut";
-        case TessBackend::Libtess2:
-            return "libtess2";
-    }
-    return "unknown";
-}
-
-namespace {
-
-using EarPoint = std::array<double, 2>;
-
-/* 射线法：点是否在多边形内（边界视作外部，足够做嵌套判定） */
 bool point_in_contour(const Contour& c, float x, float y) {
     const size_t n = c.points.size();
     if (n < 3) {
@@ -283,12 +214,204 @@ bool point_in_contour(const Contour& c, float x, float y) {
     return inside;
 }
 
-bool contour_contains(const Contour& a, const Contour& b) {
-    if (b.points.empty()) {
+bool contour_contains(const Contour& outer, const Contour& inner) {
+    if (inner.points.empty()) {
         return false;
     }
-    return point_in_contour(a, b.points[0].x, b.points[0].y);
+    return point_in_contour(outer, inner.points[0].x, inner.points[0].y);
 }
+
+float min_contour_edge_length(const Contour& c) {
+    const size_t n = c.points.size();
+    if (n < 2) {
+        return 1e30f;
+    }
+    constexpr float kMinEdgeLen = 0.5f;  // 忽略细分碎边，避免误钳 R
+    float min_len = 1e30f;
+    for (size_t i = 0; i < n; ++i) {
+        const Vec2& a = c.points[i];
+        const Vec2& b = c.points[(i + 1) % n];
+        const float dx = b.x - a.x;
+        const float dy = b.y - a.y;
+        const float len = std::sqrt(dx * dx + dy * dy);
+        if (len >= kMinEdgeLen) {
+            min_len = std::min(min_len, len);
+        }
+    }
+    return min_len;
+}
+
+float min_dist_contours(const Contour& a, const Contour& b) {
+    float min_d = 1e30f;
+    const auto test_points_to_edges = [&](const Contour& pts, const Contour& edges) {
+        const size_t ne = edges.points.size();
+        if (ne < 2) {
+            return;
+        }
+        for (const Vec2& p : pts.points) {
+            for (size_t j = 0; j < ne; ++j) {
+                const Vec2& ea = edges.points[j];
+                const Vec2& eb = edges.points[(j + 1) % ne];
+                min_d = std::min(min_d, dist_point_segment(p.x, p.y, ea.x, ea.y, eb.x, eb.y));
+            }
+        }
+    };
+    test_points_to_edges(a, b);
+    test_points_to_edges(b, a);
+    return min_d;
+}
+
+/* 单环最短边之半：相邻角圆角在 R 超过此值时会在边上相撞 */
+float estimate_min_edge_half(const GlyphOutline& outline) {
+    float min_edge = 1e30f;
+    for (const Contour& c : outline.contours) {
+        min_edge = std::min(min_edge, min_contour_edge_length(c));
+    }
+    if (!(min_edge < 1e29f)) {
+        return 0.f;
+    }
+    return 0.5f * min_edge;
+}
+
+/*
+ * 不同轮廓边界之间的最小距离之半。
+ * 含：外框↔孔、孔↔孔（如「田」四口之间）。R 超过此值时相邻棱带会相碰。
+ */
+float estimate_min_gap_half(const GlyphOutline& outline) {
+    const size_t n = outline.contours.size();
+    if (n < 2) {
+        return 1e30f;
+    }
+
+    std::vector<int> depth(n, 0);
+    for (size_t i = 0; i < n; ++i) {
+        for (size_t j = 0; j < n; ++j) {
+            if (i == j) {
+                continue;
+            }
+            if (contour_contains(outline.contours[j], outline.contours[i])) {
+                ++depth[i];
+            }
+        }
+    }
+
+    float min_gap = 1e30f;
+    for (size_t i = 0; i < n; ++i) {
+        for (size_t j = i + 1; j < n; ++j) {
+            const bool i_in_j = contour_contains(outline.contours[j], outline.contours[i]);
+            const bool j_in_i = contour_contains(outline.contours[i], outline.contours[j]);
+            if (i_in_j || j_in_i) {
+                const Contour& inner_c =
+                    i_in_j ? outline.contours[i] : outline.contours[j];
+                const Contour& outer_c =
+                    i_in_j ? outline.contours[j] : outline.contours[i];
+                min_gap = std::min(min_gap, min_dist_contours(inner_c, outer_c));
+            } else if (depth[i] == depth[j]) {
+                min_gap =
+                    std::min(min_gap, min_dist_contours(outline.contours[i], outline.contours[j]));
+            }
+        }
+    }
+    if (!(min_gap < 1e29f)) {
+        return 1e30f;
+    }
+    return 0.5f * min_gap;
+}
+
+}  // namespace
+
+float clamp_edge_radius(float radius, float depth) {
+    if (!(radius > 0.f) || !(depth > 0.f)) {
+        return 0.f;
+    }
+    const float max_b = depth * 0.5f - 1e-3f;
+    if (max_b <= 0.f) {
+        return 0.f;
+    }
+    return std::min(radius, max_b);
+}
+
+float estimate_min_half_width(const GlyphOutline& outline) {
+    float limit = 1e30f;
+
+    const float by_edge = estimate_min_edge_half(outline);
+    if (by_edge > kMeshEps) {
+        limit = std::min(limit, by_edge);
+    }
+
+    const float by_gap = estimate_min_gap_half(outline);
+    if (by_gap < 1e29f) {
+        limit = std::min(limit, by_gap);
+    }
+
+    if (limit < 1e29f) {
+        return limit;
+    }
+
+    float minx = 0.f, miny = 0.f, maxx = 0.f, maxy = 0.f;
+    outline_bounds(outline, minx, miny, maxx, maxy);
+    return 0.25f * std::min(maxx - minx, maxy - miny);
+}
+
+float max_safe_edge_radius(const GlyphOutline& outline, float depth) {
+    const float by_depth = clamp_edge_radius(1e30f, depth);
+    float by_geom = 1e30f;
+
+    const float edge_half = estimate_min_edge_half(outline);
+    if (edge_half > kMeshEps) {
+        // 同环相邻角圆角在短边上相撞：R ≈ 边长/2
+        by_geom = std::min(by_geom, edge_half * 0.85f);
+    }
+
+    const float gap_half = estimate_min_gap_half(outline);
+    if (gap_half < 1e29f) {
+        // 相邻轮廓（孔↔孔、框↔孔）棱带相碰：R ≈ 间距/2，留更大余量
+        by_geom = std::min(by_geom, gap_half * 0.75f);
+    }
+
+    if (by_geom > 1e29f) {
+        by_geom = estimate_min_half_width(outline) * 0.9f;
+    }
+
+    if (!(by_geom > 0.f)) {
+        return 0.f;
+    }
+    return std::min(by_depth, by_geom);
+}
+
+float edge_radius_from_strength(float strength_01, const GlyphOutline& outline, float depth) {
+    if (!(strength_01 > 0.f)) {
+        return 0.f;
+    }
+    const float t = std::min(1.f, strength_01);
+    return t * max_safe_edge_radius(outline, depth);
+}
+
+const char* tess_backend_name(TessBackend backend) {
+    switch (backend) {
+        case TessBackend::Earcut:
+            return "earcut";
+        case TessBackend::Libtess2:
+            return "libtess2";
+    }
+    return "unknown";
+}
+
+const char* tess_mode_name(TessMode mode) {
+    switch (mode) {
+        case TessMode::Auto:
+            return "auto";
+        case TessMode::Earcut:
+            return "earcut";
+        case TessMode::Libtess2:
+            return "libtess2";
+    }
+    return "unknown";
+}
+
+namespace {
+
+using EarPoint = std::array<double, 2>;
 
 /* TrueType Y-up：外环 CW、孔 CCW；earcut 期望外环 CCW、孔 CW → 整环反转 */
 std::vector<EarPoint> contour_to_earcut_ring(const Contour& c) {
@@ -435,26 +558,57 @@ bool try_tessellate_libtess2(const GlyphOutline& outline, std::vector<float>& ou
 
 }  // namespace
 
-bool try_tessellate(const GlyphOutline& outline, std::vector<float>& out_xy,
-                    std::vector<unsigned int>& out_tris) {
-    if (g_tess_backend == TessBackend::Libtess2) {
+bool try_tessellate_one(TessBackend backend, const GlyphOutline& outline,
+                        std::vector<float>& out_xy, std::vector<unsigned int>& out_tris) {
+    if (backend == TessBackend::Libtess2) {
         return try_tessellate_libtess2(outline, out_xy, out_tris);
     }
     return try_tessellate_earcut(outline, out_xy, out_tris);
 }
 
-float resolve_inset_radius(const GlyphOutline& outline, float requested, GlyphOutline& inner,
-                           std::vector<float>& xy, std::vector<unsigned int>& tris) {
+bool try_tessellate(const GlyphOutline& outline, TessMode mode, std::vector<float>& out_xy,
+                    std::vector<unsigned int>& out_tris, std::string* fallback_reason) {
+    if (mode == TessMode::Libtess2) {
+        return try_tessellate_one(TessBackend::Libtess2, outline, out_xy, out_tris);
+    }
+    if (mode == TessMode::Earcut) {
+        return try_tessellate_one(TessBackend::Earcut, outline, out_xy, out_tris);
+    }
+
+    // Auto：Earcut → libtess2
+    if (try_tessellate_one(TessBackend::Earcut, outline, out_xy, out_tris)) {
+        return true;
+    }
+    std::vector<float> fb_xy;
+    std::vector<unsigned int> fb_tris;
+    if (try_tessellate_one(TessBackend::Libtess2, outline, fb_xy, fb_tris)) {
+        out_xy = std::move(fb_xy);
+        out_tris = std::move(fb_tris);
+        if (fallback_reason && fallback_reason->empty()) {
+            *fallback_reason = "tess earcut failed; used libtess2";
+        }
+        return true;
+    }
+    if (fallback_reason && fallback_reason->empty()) {
+        *fallback_reason = "tess earcut+libtess2 failed";
+    }
+    out_xy.clear();
+    out_tris.clear();
+    return false;
+}
+
+float resolve_inset_radius(const GlyphOutline& outline, float requested, float depth, TessMode mode,
+                           GlyphOutline& inner, std::vector<float>& xy,
+                           std::vector<unsigned int>& tris, std::string* fallback_reason) {
     if (requested <= kMeshEps) {
         return 0.f;
     }
 
-    // 调用方已用 depth 做过 clamp；此处再防平面笔画过细
-    const float stroke_cap = estimate_min_half_width(outline) * 0.9f;
+    const float stroke_cap = max_safe_edge_radius(outline, depth);
     float r = requested;
     if (stroke_cap > kMeshEps && r > stroke_cap) {
-        std::cerr << "[mesh_offset] radius " << requested << " 超过笔画半宽，钳制到 " << stroke_cap
-                  << "\n";
+        std::cerr << "[mesh_offset] radius " << requested << " 超过安全上限（短边/邻距），钳制到 "
+                  << stroke_cap << "\n";
         r = stroke_cap;
     }
 
@@ -462,7 +616,7 @@ float resolve_inset_radius(const GlyphOutline& outline, float requested, GlyphOu
         std::cerr << "[mesh_offset] 笔画过窄，无法内缩\n";
         return 0.f;
     }
-    if (offset_and_tess_ok(outline, r, inner, xy, tris)) {
+    if (offset_and_tess_ok(outline, r, mode, inner, xy, tris, fallback_reason)) {
         return r;
     }
 
@@ -472,17 +626,21 @@ float resolve_inset_radius(const GlyphOutline& outline, float requested, GlyphOu
     GlyphOutline best_inner;
     std::vector<float> best_xy;
     std::vector<unsigned int> best_tris;
+    std::string best_fallback;
 
     for (int i = 0; i < kBinSearchIters; ++i) {
         const float mid = 0.5f * (lo + hi);
         GlyphOutline trial_inner;
         std::vector<float> trial_xy;
         std::vector<unsigned int> trial_tris;
-        if (offset_and_tess_ok(outline, mid, trial_inner, trial_xy, trial_tris)) {
+        std::string trial_fallback;
+        if (offset_and_tess_ok(outline, mid, mode, trial_inner, trial_xy, trial_tris,
+                               &trial_fallback)) {
             best = mid;
             best_inner = std::move(trial_inner);
             best_xy = std::move(trial_xy);
             best_tris = std::move(trial_tris);
+            best_fallback = std::move(trial_fallback);
             lo = mid;
         } else {
             hi = mid;
@@ -494,6 +652,9 @@ float resolve_inset_radius(const GlyphOutline& outline, float requested, GlyphOu
         inner = std::move(best_inner);
         xy = std::move(best_xy);
         tris = std::move(best_tris);
+        if (fallback_reason && fallback_reason->empty() && !best_fallback.empty()) {
+            *fallback_reason = std::move(best_fallback);
+        }
         return best;
     }
 
