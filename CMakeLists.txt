@@ -76,7 +76,15 @@ add_subdirectory(third_party/harfbuzz)
 add_executable(Text3DDemo
     src/main.cpp
     src/mesh/mesh_extrude.cpp
+    src/mesh/glyph_planar.cpp
+    src/mesh/glyph_geometry_cache.cpp
+    src/mesh/glyph_mesh_pool.cpp
+    src/mesh/async_mesh_builder.cpp
+    src/mesh/mesh_types.cpp
+    src/mesh/build_result.cpp
+    src/mesh/contour_clean.cpp
     src/mesh/mesh_geom.cpp
+    src/mesh/mesh_inflate.cpp
     src/mesh/mesh_offset_tess.cpp
     src/mesh/edge_chamfer.cpp
     src/mesh/edge_fillet.cpp
@@ -86,11 +94,17 @@ add_executable(Text3DDemo
     src/text/utf8.cpp
     src/text/font_catalog.cpp
     src/ui/debug_ui.cpp
+    src/perf/perf_stats.cpp
     src/render/renderer.cpp
+    src/render/gpu_mesh_pool.cpp
+    src/render/offscreen_canvas.cpp
+    src/render/screen_pass.cpp
     src/render/texture.cpp
     src/render/pbr_material.cpp
     src/anims/text_anim.cpp
     src/anims/appear_spin.cpp
+    src/bench/bench_runner.cpp
+    src/bench/bench_report.cpp
 )
 
 target_include_directories(Text3DDemo PRIVATE
