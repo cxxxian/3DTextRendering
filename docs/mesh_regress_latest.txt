@@ -1,0 +1,168 @@
+
+[bevel=1]
+ glyph U+42
+[ft_outline] glyph_index=37 contours=3 advance=43
+[mesh_extrude] vertices=602 indices=1044 depth=20 strength=1 applied_R=1.68354 (bevel) inflate_H=0
+[mesh_parts] Front[0,135) tris=45 Back[135,270) tris=45 Side[786,1044) tris=86 Bevel[270,786) tris=172 front_flat=yes
+  OK verts=602 tris=348
+ glyph U+38
+[ft_outline] glyph_index=27 contours=3 advance=36
+[mesh_extrude] vertices=924 indices=1596 depth=20 strength=1 applied_R=1.10807 (bevel) inflate_H=0
+[mesh_parts] Front[0,204) tris=68 Back[204,408) tris=68 Side[1200,1596) tris=132 Bevel[408,1200) tris=264 front_flat=yes
+  OK verts=924 tris=532
+ glyph U+40
+[ft_outline] glyph_index=35 contours=2 advance=65
+[mesh_extrude] vertices=1540 indices=2640 depth=20 strength=1 applied_R=1.37223 (bevel) inflate_H=0
+[mesh_parts] Front[0,330) tris=110 Back[330,660) tris=110 Side[1980,2640) tris=220 Bevel[660,1980) tris=440 front_flat=yes
+  OK verts=1540 tris=880
+ glyph U+26
+[ft_outline] glyph_index=9 contours=3 advance=43
+[mesh_extrude] vertices=826 indices=1428 depth=20 strength=1 applied_R=1.78839 (bevel) inflate_H=0
+[mesh_parts] Front[0,183) tris=61 Back[183,366) tris=61 Side[1074,1428) tris=118 Bevel[366,1074) tris=236 front_flat=yes
+  OK verts=826 tris=476
+ glyph U+65e5
+[ft_outline] glyph_index=14452 contours=3 advance=64
+[mesh_extrude] vertices=224 indices=396 depth=20 strength=1 applied_R=2.27813 (bevel) inflate_H=0
+[mesh_parts] Front[0,54) tris=18 Back[54,108) tris=18 Side[300,396) tris=32 Bevel[108,300) tris=64 front_flat=yes
+  OK verts=224 tris=132
+ glyph U+7530
+[ft_outline] glyph_index=18367 contours=5 advance=64
+[mesh_extrude] vertices=336 indices=588 depth=20 strength=1 applied_R=2.19375 (bevel) inflate_H=0
+[mesh_parts] Front[0,78) tris=26 Back[78,156) tris=26 Side[444,588) tris=48 Bevel[156,444) tris=96 front_flat=yes
+  OK verts=336 tris=196
+ glyph U+56de
+[ft_outline] glyph_index=10605 contours=4 advance=64
+[mesh_extrude] vertices=280 indices=480 depth=20 strength=1 applied_R=2.19375 (bevel) inflate_H=0
+[mesh_parts] Front[0,60) tris=20 Back[60,120) tris=20 Side[360,480) tris=40 Bevel[120,360) tris=80 front_flat=yes
+  OK verts=280 tris=160
+ glyph U+56fd
+[ft_outline] glyph_index=10636 contours=4 advance=64
+[mesh_offset] radius 2.00775 自交/失败，缩小到 1.90579
+[mesh_extrude] vertices=532 indices=888 depth=20 strength=1 applied_R=1.90579 (bevel) inflate_H=0
+[mesh_parts] Front[0,102) tris=34 Back[102,204) tris=34 Side[660,888) tris=76 Bevel[204,660) tris=152 front_flat=yes
+[mesh_offset] radius 2.00775 自交/失败，缩小到 1.90579
+  OK verts=532 tris=296
+ glyph U+8d62
+[ft_outline] glyph_index=24561 contours=10 advance=64
+[mesh_extrude] vertices=1554 indices=2640 depth=20 strength=1 applied_R=0.603289 (bevel) inflate_H=0
+[mesh_parts] Front[0,321) tris=107 Back[321,642) tris=107 Side[1974,2640) tris=222 Bevel[642,1974) tris=444 front_flat=yes
+  OK verts=1554 tris=880
+ glyph U+9f98
+[ft_outline] glyph_index=29223 contours=17 advance=64
+[mesh_offset] radius 0.02034 无法内缩，退回 0
+[mesh_extrude] vertices=1440 indices=2742 depth=20 strength=1 applied_R=0 (bevel) inflate_H=0
+[mesh_parts] Front[0,636) tris=212 Back[636,1272) tris=212 Side[1272,2742) tris=490 front_flat=yes
+[mesh_offset] radius 0.02034 无法内缩，退回 0
+  WARN inset fallback to straight edge requested=0.02034
+  OK verts=1440 tris=914
+
+[fillet=1]
+ glyph U+42
+[ft_outline] glyph_index=37 contours=3 advance=43
+[mesh_extrude] vertices=3010 indices=4656 depth=20 strength=1 applied_R=1.68354 (fillet) inflate_H=0
+[mesh_parts] Front[0,135) tris=45 Back[135,270) tris=45 Side[4398,4656) tris=86 Rounded[270,4398) tris=1376 front_flat=yes
+  OK verts=3010 tris=1552
+ glyph U+38
+[ft_outline] glyph_index=27 contours=3 advance=36
+[mesh_extrude] vertices=4620 indices=7140 depth=20 strength=1 applied_R=1.10807 (fillet) inflate_H=0
+[mesh_parts] Front[0,204) tris=68 Back[204,408) tris=68 Side[6744,7140) tris=132 Rounded[408,6744) tris=2112 front_flat=yes
+  OK verts=4620 tris=2380
+ glyph U+40
+[ft_outline] glyph_index=35 contours=2 advance=65
+[mesh_extrude] vertices=7700 indices=11880 depth=20 strength=1 applied_R=1.37223 (fillet) inflate_H=0
+[mesh_parts] Front[0,330) tris=110 Back[330,660) tris=110 Side[11220,11880) tris=220 Rounded[660,11220) tris=3520 front_flat=yes
+  OK verts=7700 tris=3960
+ glyph U+26
+[ft_outline] glyph_index=9 contours=3 advance=43
+[mesh_extrude] vertices=4130 indices=6384 depth=20 strength=1 applied_R=1.78839 (fillet) inflate_H=0
+[mesh_parts] Front[0,183) tris=61 Back[183,366) tris=61 Side[6030,6384) tris=118 Rounded[366,6030) tris=1888 front_flat=yes
+  OK verts=4130 tris=2128
+ glyph U+65e5
+[ft_outline] glyph_index=14452 contours=3 advance=64
+[mesh_extrude] vertices=1120 indices=1740 depth=20 strength=1 applied_R=2.27813 (fillet) inflate_H=0
+[mesh_parts] Front[0,54) tris=18 Back[54,108) tris=18 Side[1644,1740) tris=32 Rounded[108,1644) tris=512 front_flat=yes
+  OK verts=1120 tris=580
+ glyph U+7530
+[ft_outline] glyph_index=18367 contours=5 advance=64
+[mesh_extrude] vertices=1680 indices=2604 depth=20 strength=1 applied_R=2.19375 (fillet) inflate_H=0
+[mesh_parts] Front[0,78) tris=26 Back[78,156) tris=26 Side[2460,2604) tris=48 Rounded[156,2460) tris=768 front_flat=yes
+  OK verts=1680 tris=868
+ glyph U+56de
+[ft_outline] glyph_index=10605 contours=4 advance=64
+[mesh_extrude] vertices=1400 indices=2160 depth=20 strength=1 applied_R=2.19375 (fillet) inflate_H=0
+[mesh_parts] Front[0,60) tris=20 Back[60,120) tris=20 Side[2040,2160) tris=40 Rounded[120,2040) tris=640 front_flat=yes
+  OK verts=1400 tris=720
+ glyph U+56fd
+[ft_outline] glyph_index=10636 contours=4 advance=64
+[mesh_offset] radius 2.00775 自交/失败，缩小到 1.90579
+[mesh_extrude] vertices=2660 indices=4080 depth=20 strength=1 applied_R=1.90579 (fillet) inflate_H=0
+[mesh_parts] Front[0,102) tris=34 Back[102,204) tris=34 Side[3852,4080) tris=76 Rounded[204,3852) tris=1216 front_flat=yes
+[mesh_offset] radius 2.00775 自交/失败，缩小到 1.90579
+  OK verts=2660 tris=1360
+ glyph U+8d62
+[ft_outline] glyph_index=24561 contours=10 advance=64
+[mesh_extrude] vertices=7770 indices=11964 depth=20 strength=1 applied_R=0.603289 (fillet) inflate_H=0
+[mesh_parts] Front[0,321) tris=107 Back[321,642) tris=107 Side[11298,11964) tris=222 Rounded[642,11298) tris=3552 front_flat=yes
+  OK verts=7770 tris=3988
+ glyph U+9f98
+[ft_outline] glyph_index=29223 contours=17 advance=64
+[mesh_offset] radius 0.02034 无法内缩，退回 0
+[mesh_extrude] vertices=1440 indices=2742 depth=20 strength=1 applied_R=0 (fillet) inflate_H=0
+[mesh_parts] Front[0,636) tris=212 Back[636,1272) tris=212 Side[1272,2742) tris=490 front_flat=yes
+[mesh_offset] radius 0.02034 无法内缩，退回 0
+  WARN inset fallback to straight edge requested=0.02034
+  OK verts=1440 tris=914
+
+[inflate=1]
+ glyph U+42
+[ft_outline] glyph_index=37 contours=3 advance=43
+[mesh_extrude] vertices=187242 indices=1106178 depth=20 strength=0 applied_R=0 (bevel) inflate_H=7
+[mesh_parts] Front[0,552960) tris=184320 Back[552960,1105920) tris=184320 Side[1105920,1106178) tris=86
+  OK verts=187242 tris=368726
+ glyph U+38
+[ft_outline] glyph_index=27 contours=3 advance=36
+[mesh_extrude] vertices=283014 indices=1671564 depth=20 strength=0 applied_R=0 (bevel) inflate_H=7
+[mesh_parts] Front[0,835584) tris=278528 Back[835584,1671168) tris=278528 Side[1671168,1671564) tris=132
+  OK verts=283014 tris=557188
+ glyph U+40
+[ft_outline] glyph_index=35 contours=2 advance=65
+[mesh_extrude] vertices=458040 indices=2704020 depth=20 strength=0 applied_R=0 (bevel) inflate_H=7
+[mesh_parts] Front[0,1351680) tris=450560 Back[1351680,2703360) tris=450560 Side[2703360,2704020) tris=220
+  OK verts=458040 tris=901340
+ glyph U+26
+[ft_outline] glyph_index=9 contours=3 advance=43
+[mesh_extrude] vertices=253866 indices=1499490 depth=20 strength=0 applied_R=0 (bevel) inflate_H=7
+[mesh_parts] Front[0,749568) tris=249856 Back[749568,1499136) tris=249856 Side[1499136,1499490) tris=118
+  OK verts=253866 tris=499830
+ glyph U+65e5
+[ft_outline] glyph_index=14452 contours=3 advance=64
+[mesh_extrude] vertices=74814 indices=442464 depth=20 strength=0 applied_R=0 (bevel) inflate_H=7
+[mesh_parts] Front[0,221184) tris=73728 Back[221184,442368) tris=73728 Side[442368,442464) tris=32
+  OK verts=74814 tris=147488
+ glyph U+7530
+[ft_outline] glyph_index=18367 contours=5 advance=64
+[mesh_extrude] vertices=108126 indices=639120 depth=20 strength=0 applied_R=0 (bevel) inflate_H=7
+[mesh_parts] Front[0,319488) tris=106496 Back[319488,638976) tris=106496 Side[638976,639120) tris=48
+  OK verts=108126 tris=213040
+ glyph U+56de
+[ft_outline] glyph_index=10605 contours=4 advance=64
+[mesh_extrude] vertices=83280 indices=491640 depth=20 strength=0 applied_R=0 (bevel) inflate_H=7
+[mesh_parts] Front[0,245760) tris=81920 Back[245760,491520) tris=81920 Side[491520,491640) tris=40
+  OK verts=83280 tris=163880
+ glyph U+56fd
+[ft_outline] glyph_index=10636 contours=4 advance=64
+[mesh_extrude] vertices=141852 indices=835812 depth=20 strength=0 applied_R=0 (bevel) inflate_H=7
+[mesh_parts] Front[0,417792) tris=139264 Back[417792,835584) tris=139264 Side[835584,835812) tris=76
+  OK verts=141852 tris=278604
+ glyph U+8d62
+[ft_outline] glyph_index=24561 contours=10 advance=64
+[mesh_extrude] vertices=445824 indices=2630298 depth=20 strength=0 applied_R=0 (bevel) inflate_H=7
+[mesh_parts] Front[0,1314816) tris=438272 Back[1314816,2629632) tris=438272 Side[2629632,2630298) tris=222
+  OK verts=445824 tris=876766
+ glyph U+9f98
+[ft_outline] glyph_index=29223 contours=17 advance=64
+[mesh_extrude] vertices=882558 indices=5211582 depth=20 strength=0 applied_R=0 (bevel) inflate_H=7
+[mesh_parts] Front[0,2605056) tris=868352 Back[2605056,5210112) tris=868352 Side[5210112,5211582) tris=490
+  OK verts=882558 tris=1737194
+
+=== summary: 30/30 passed ===
