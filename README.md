@@ -6,8 +6,9 @@
 
 - FreeType 读取字形 outline，曲线细分为折线
 - HarfBuzz shaping（含阿拉伯文等复杂文种）
-- 挤出管线：直边 / Bevel（平倒角）/ Fillet（真圆角）
-- 三角化双后端：Earcut / libtess2（UI 可切换）
+- 挤出管线：直边 / Bevel / Fillet；棱强度 0~1；**Inflate** 字面鼓包（PS Cap 风格，帽面中点细分后再鼓）
+- Mesh 分区：Front / Back / Side / Bevel / Rounded（可查 index 范围）
+- 三角化：`TessMode` 随请求传入（auto / earcut / libtess2）；auto 失败时 Earcut→libtess2 回退
 - 着色：Lambert / Phong / PBR / Glass
 - 整句合并绘制与逐字绘制（入场动画）
 - ImGui：参数面板、性能 HUD、字体/材质扫描
@@ -44,6 +45,19 @@ cmake --build build -j
 
 ```bash
 ./build/Text3DDemo /path/to/font.ttf
+```
+
+固定场景性能报告（#15）：
+
+```bash
+# 单次（默认关 VSync，写 Markdown）
+./build/Text3DDemo --bench --build-type Release --out docs/perf/$(date +%F)-Release.md
+
+# 可选：--warmup 30 --frames 120
+# 三档依次构建并跑：
+./scripts/run_perf_matrix.sh
+# 已编好二进制时：
+./scripts/run_perf_matrix.sh --skip-build
 ```
 
 强制重新下载依赖：

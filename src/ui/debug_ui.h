@@ -8,6 +8,8 @@
 #include "render/pbr_material.h"
 #include "render/renderer.h"
 #include "anims/text_anim.h"
+#include "perf/perf_stats.h"
+#include "mesh/build_result.h"
 
 #include <vector>
 
@@ -15,24 +17,25 @@ struct GLFWwindow;
 
 namespace text3d {
 
-struct PerfStats {
-    float fps = 0.f;
-    float frame_ms = 0.f;
-    int verts = 0;
-    int tris = 0;
-    float rebuild_ms = 0.f;
-};
-
 struct EditParams {
     char text[512] = "Hello";
     float depth = 24.f;
-    float bevel = 0.f;   // 平倒角
-    float fillet = 0.f;  // 真圆角
-    float edge_r_cap = 0.f;  // rebuild 后由 layout 写入的安全半径上限（0=未知）
+    float bevel = 0.f;   // 平倒角强度 0~1
+    float fillet = 0.f;  // 真圆角强度 0~1
+    float inflate = 0.f; // Cap Inflate 强度 0~1
+    float applied_r_min = 0.f;
+    float applied_r_max = 0.f;
+    float safe_r_min = 0.f;
+    float applied_inflate_h = 0.f;  // rebuild 后实际拱高（取各字最大）
     bool unlock_vsync = false;
+    bool use_offscreen_canvas = true;  // #14：默认离屏画布
+    int canvas_size_index = 0;         // 0=1280x720，1=1920x1080
     bool text_edited = false;
 
-    int tess_backend = 0;  // 0=earcut，1=libtess2
+    /* 几何滑条 Active（拖动或 Ctrl+输入中）时为 false：预览 rebuild 但不 put L1/Mesh */
+    bool cache_write_geometry = true;
+
+    int tess_backend = 0;  // 0=auto(earcut→libtess2)，1=earcut，2=libtess2
     bool tess_backend_changed = false;
 
     ShadingModel shading = ShadingModel::Pbr;
@@ -63,7 +66,8 @@ bool debug_ui_init(GLFWwindow* window, const char* cjk_font_path);
 void debug_ui_shutdown();
 void debug_ui_begin_frame();
 void debug_ui_draw(const PerfStats& perf, EditParams& edit, bool anim_playing,
-                   bool use_per_glyph);
+                   bool use_per_glyph, const BuildResult* last_build = nullptr,
+                   bool mesh_build_busy = false);
 void debug_ui_end_frame();
 
 }  // namespace text3d

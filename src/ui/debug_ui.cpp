@@ -11,6 +11,8 @@
 #include <GLFW/glfw3.h>
 
 #include <cfloat>
+#include <cmath>
+#include <cstdio>
 #include <algorithm>
 #include <cstring>
 #include <iostream>
@@ -68,7 +70,7 @@ void debug_ui_begin_frame() {
 }
 
 void debug_ui_draw(const PerfStats& perf, EditParams& edit, bool anim_playing,
-                   bool use_per_glyph) {
+                   bool use_per_glyph, const BuildResult* last_build, bool mesh_build_busy) {
     const ImGuiIO& io = ImGui::GetIO();
     const ImVec2 display = io.DisplaySize;
 
@@ -80,12 +82,81 @@ void debug_ui_draw(const PerfStats& perf, EditParams& edit, bool anim_playing,
         ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing |
         ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoMove;
     if (ImGui::Begin("##perf_hud", nullptr, hud_flags)) {
-        ImGui::Text("FPS        %7.1f", perf.fps);
-        ImGui::Text("Frame      %7.2f ms", perf.frame_ms);
+        // 日常只看帧率、网格规模、上次重建总耗时；分阶段细节按需展开
+        ImGui::Text("FPS        %7.1f", perf.ui_fps);
+        ImGui::Text("Frame      %7.2f ms", perf.ui_frame_ms);
         ImGui::Text("Verts/Tris %5d / %5d", perf.verts, perf.tris);
+        ImGui::Text("Rebuild    %7.2f ms", perf.rebuild.total_ms);
+        if (mesh_build_busy) {
+            ImGui::Text("Build      WORK (async)");
+        } else if (last_build) {
+            if (last_build->ok) {
+                ImGui::Text("Build      OK");
+                if (!last_build->fallback_reason.empty()) {
+                    ImGui::TextWrapped("Note  %s", last_build->fallback_reason.c_str());
+                }
+            } else {
+                ImGui::Text("Build      FAIL @ %s", build_stage_name(last_build->stage));
+                if (last_build->glyph_index != 0) {
+                    ImGui::Text("Glyph      %u", last_build->glyph_index);
+                }
+                if (!last_build->fallback_reason.empty()) {
+                    ImGui::TextWrapped("Reason %s", last_build->fallback_reason.c_str());
+                }
+            }
+        }
+        if (ImGui::TreeNode("Timing details")) {
+            // 比例字体下空格补齐会抖：标签固定列宽，数值在固定宽度内右对齐
+            const float label_w =
+                ImGui::CalcTextSize("Offscreen").x + ImGui::GetStyle().ItemSpacing.x;
+            const float value_w = ImGui::CalcTextSize("0000.00 ms").x;
+            const auto timing_row = [label_w, value_w](const char* label, float ms) {
+                const float x0 = ImGui::GetCursorPosX();
+                ImGui::TextUnformatted(label);
+                char buf[32];
+                std::snprintf(buf, sizeof(buf), "%.2f ms", ms);
+                ImGui::SameLine(x0 + label_w + value_w - ImGui::CalcTextSize(buf).x);
+                ImGui::TextUnformatted(buf);
+            };
+            timing_row("Render Sub", perf.render_submit_ms);
+            timing_row("Text Draw", perf.text_draw_ms);
+            timing_row("Offscreen", perf.offscreen_pass_ms);
+            timing_row("Compose", perf.offscreen_compose_ms);
+            timing_row("Present", perf.present_ms);
+            timing_row("2D", perf.rebuild.stage_2d_ms);
+            timing_row("3D", perf.rebuild.stage_3d_ms);
+            timing_row("Merge", perf.rebuild.stage_merge_ms);
+            timing_row("Upload", perf.rebuild.stage_upload_ms);
+            ImGui::Text("GPU Up    skip=%d up=%d unique=%d bytes=%llu",
+                        perf.upload_slots_skipped, perf.upload_slots_uploaded,
+                        perf.upload_gpu_unique_buffers,
+                        static_cast<unsigned long long>(perf.upload_bytes));
+            ImGui::Text("Draw Call logic=%d  gl=%d%s", perf.draw_batches, perf.gl_draw_calls,
+                        use_per_glyph ? "  (per-glyph)" : "  (merged)");
+            ImGui::Separator();
+            ImGui::Text("Outline hit %5.1f%%  %llu/%llu", perf.cache_outline.hit_rate * 100.f,
+                        static_cast<unsigned long long>(perf.cache_outline.hits),
+                        static_cast<unsigned long long>(perf.cache_outline.lookups));
+            ImGui::Text("Planar  hit %5.1f%%  %llu/%llu", perf.cache_planar.hit_rate * 100.f,
+                        static_cast<unsigned long long>(perf.cache_planar.hits),
+                        static_cast<unsigned long long>(perf.cache_planar.lookups));
+            ImGui::Text("Mesh    hit %5.1f%%  %llu/%llu", perf.cache_mesh.hit_rate * 100.f,
+                        static_cast<unsigned long long>(perf.cache_mesh.hits),
+                        static_cast<unsigned long long>(perf.cache_mesh.lookups));
+            ImGui::Text("Cache      %.2f / %.0f MB  (o=%d p=%d m=%d)",
+                        perf.cache_outline.mb_used + perf.cache_planar.mb_used +
+                            perf.cache_mesh.mb_used,
+                        perf.cache_outline.mb_limit + perf.cache_planar.mb_limit +
+                            perf.cache_mesh.mb_limit,
+                        perf.cache_outline.entries, perf.cache_planar.entries,
+                        perf.cache_mesh.entries);
+            ImGui::TreePop();
+        }
         ImGui::Separator();
-        ImGui::Text("Rebuild    %7.2f ms", perf.rebuild_ms);
-        ImGui::Text("Tess       %s", edit.tess_backend == 0 ? "earcut" : "libtess2");
+        ImGui::Text("Tess       %s",
+                    edit.tess_backend == 0   ? "auto"
+                    : edit.tess_backend == 1 ? "earcut"
+                                            : "libtess2");
         ImGui::Text("Draw path  %s", use_per_glyph ? "per-glyph" : "merged");
         if (edit.anims && edit.anim_index >= 0 &&
             edit.anim_index < static_cast<int>(edit.anims->size())) {
@@ -152,39 +223,75 @@ void debug_ui_draw(const PerfStats& perf, EditParams& edit, bool anim_playing,
         ImGui::TextDisabled("Space cycles Hello / Arabic / A; use SF Arabic font");
 
         {
-            const char* tess_labels[] = {"earcut", "libtess2"};
-            if (ImGui::Combo("Tessellator", &edit.tess_backend, tess_labels, 2)) {
+            const char* tess_labels[] = {"auto", "earcut", "libtess2"};
+            if (ImGui::Combo("Tessellator", &edit.tess_backend, tess_labels, 3)) {
                 edit.tess_backend_changed = true;
             }
-            ImGui::TextDisabled("Switch rebuilds mesh for A/B compare");
+            ImGui::TextDisabled("auto: earcut then libtess2 on fail");
         }
 
         ImGui::SliderFloat("Depth", &edit.depth, 1.f, 80.f, "%.1f");
+        if (ImGui::IsItemActive()) {
+            edit.cache_write_geometry = false;
+        }
         {
-            float r_max = std::max(0.f, edit.depth * 0.5f - 0.05f);
-            if (edit.edge_r_cap > 0.f) {
-                r_max = std::min(r_max, edit.edge_r_cap);
+            if (edit.bevel < 0.f) {
+                edit.bevel = 0.f;
             }
-            if (edit.bevel > r_max) {
-                edit.bevel = r_max;
+            if (edit.bevel > 1.f) {
+                edit.bevel = 1.f;
             }
-            if (edit.fillet > r_max) {
-                edit.fillet = r_max;
+            if (edit.fillet < 0.f) {
+                edit.fillet = 0.f;
             }
-            if (ImGui::SliderFloat("Bevel", &edit.bevel, 0.f, r_max, "%.2f")) {
+            if (edit.fillet > 1.f) {
+                edit.fillet = 1.f;
+            }
+            if (ImGui::SliderFloat("Bevel", &edit.bevel, 0.f, 1.f, "%.2f")) {
                 if (edit.bevel > 0.f) {
                     edit.fillet = 0.f;
                 }
             }
-            ImGui::TextDisabled("Flat chamfer (~45°)");
-            if (ImGui::SliderFloat("Fillet", &edit.fillet, 0.f, r_max, "%.2f")) {
+            if (ImGui::IsItemActive()) {
+                edit.cache_write_geometry = false;
+            }
+            ImGui::TextDisabled("Strength 0~1; R = strength x per-glyph safe radius");
+            if (ImGui::SliderFloat("Fillet", &edit.fillet, 0.f, 1.f, "%.2f")) {
                 if (edit.fillet > 0.f) {
                     edit.bevel = 0.f;
                 }
             }
-            ImGui::TextDisabled("Round edge; max limited by stroke width");
-            if (edit.edge_r_cap > 0.f) {
-                ImGui::TextDisabled("Safe R <= %.2f (min stroke / depth)", r_max);
+            if (ImGui::IsItemActive()) {
+                edit.cache_write_geometry = false;
+            }
+            ImGui::TextDisabled("Round edge; mutually exclusive with Bevel");
+            if (edit.applied_r_max > 0.f || edit.applied_r_min > 0.f) {
+                if (std::fabs(edit.applied_r_max - edit.applied_r_min) < 1e-3f) {
+                    ImGui::TextDisabled("Applied R = %.2f (font units)", edit.applied_r_min);
+                } else {
+                    ImGui::TextDisabled("Applied R = %.2f .. %.2f (per glyph)", edit.applied_r_min,
+                                        edit.applied_r_max);
+                }
+            }
+            if (edit.safe_r_min > 0.f) {
+                ImGui::TextDisabled("Safe R@1.0 min = %.2f", edit.safe_r_min);
+            }
+            if (edit.inflate < 0.f) {
+                edit.inflate = 0.f;
+            }
+            if (edit.inflate > 1.f) {
+                edit.inflate = 1.f;
+            }
+            ImGui::SliderFloat("Inflate", &edit.inflate, 0.f, 1.f, "%.2f");
+            if (ImGui::IsItemActive()) {
+                edit.cache_write_geometry = false;
+            }
+            ImGui::TextDisabled("Cap bulge; Ctrl+Click to type, Enter commits cache");
+            if (edit.applied_inflate_h > 0.f) {
+                ImGui::TextDisabled("Applied H = %.2f (font units)", edit.applied_inflate_h);
+            }
+            if (!edit.cache_write_geometry) {
+                ImGui::TextDisabled("Cache write paused (preview only)");
             }
         }
 
@@ -300,6 +407,15 @@ void debug_ui_draw(const PerfStats& perf, EditParams& edit, bool anim_playing,
         ImGui::Checkbox("Unlock FPS (disable VSync)", &edit.unlock_vsync);
         if (!edit.unlock_vsync) {
             ImGui::TextDisabled("Locked ~60 FPS");
+        }
+        ImGui::Separator();
+        ImGui::Checkbox("Offscreen canvas (#14)", &edit.use_offscreen_canvas);
+        if (edit.use_offscreen_canvas) {
+            const char* canvas_labels[] = {"1280x720", "1920x1080"};
+            ImGui::Combo("Canvas size", &edit.canvas_size_index, canvas_labels, 2);
+            ImGui::TextDisabled("Blank clear each frame; Screen present to window");
+        } else {
+            ImGui::TextDisabled("Direct window draw (legacy path)");
         }
     }
     ImGui::End();

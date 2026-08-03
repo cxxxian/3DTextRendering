@@ -26,15 +26,21 @@
 #include <glm/gtc/type_ptr.hpp>
 
 #include "ui/debug_ui.h"
+#include "perf/perf_stats.h"
+#include "mesh/build_result.h"
+#include "mesh/async_mesh_builder.h"
 #include "text/font_catalog.h"
-#include "text/ft_outline.h"
-#include "mesh/mesh_extrude.h"
 #include "mesh/mesh_offset_tess.h"
 #include "render/camera.h"
 #include "render/pbr_material.h"
 #include "render/renderer.h"
+#include "render/offscreen_canvas.h"
+#include "render/screen_pass.h"
 #include "anims/text_anim.h"
 #include "text/text_layout.h"
+#include "bench/bench_runner.h"
+
+#include <cstdlib>
 
 namespace {
 
@@ -47,11 +53,13 @@ struct AppState {
 
     text3d::EditParams edit;
     text3d::PerfStats perf;
+    text3d::BuildResult last_build;
 
     std::string applied_text = "Hello";
     float applied_depth = 24.f;
     float applied_bevel = 0.f;
     float applied_fillet = 0.f;
+    float applied_inflate = 0.f;
     int applied_font_index = -1;
     int applied_anim_index = -1;
     int applied_tess_backend = -1;
@@ -72,8 +80,20 @@ struct AppState {
     text3d::PbrMaterialGpu active_pbr_material;
     int loaded_pbr_material_index = 0;  // 0 = 无贴图材质
 
+    text3d::AsyncMeshBuilder mesh_builder;
+    bool mesh_build_inflight = false;
+    bool has_submitted_req = false;
+    text3d::AsyncMeshBuildRequest last_submitted_req;
+
     double last_frame_time = 0.0;
     float fps_smooth = 0.f;
+
+    bool bench_mode = false;
+    bool bench_just_applied = false;
+    float bench_apply_upload_ms = 0.f;
+    bool bench_request_orbit = false;
+    text3d::BenchOptions bench_opt;
+    text3d::BenchRunner bench_runner;
 };
 
 AppState g_state;
@@ -196,76 +216,157 @@ void key_callback(GLFWwindow* window, int key, int, int action, int) {
     }
 }
 
-/* 按当前动画是否需要逐字，重建几何并上传 GPU */
-bool rebuild_and_upload(text3d::FontFace& font, text3d::Renderer& renderer) {
-    const auto t0 = std::chrono::steady_clock::now();
+text3d::TessMode tess_mode_from_ui(int backend) {
+    if (backend == 1) {
+        return text3d::TessMode::Earcut;
+    }
+    if (backend == 2) {
+        return text3d::TessMode::Libtess2;
+    }
+    return text3d::TessMode::Auto;
+}
 
-    const text3d::TessBackend backend =
-        (g_state.edit.tess_backend == 1) ? text3d::TessBackend::Libtess2
-                                         : text3d::TessBackend::Earcut;
-    text3d::set_tess_backend(backend);
+text3d::AsyncMeshBuildRequest make_mesh_build_request() {
+    text3d::AsyncMeshBuildRequest req;
+    req.text = g_state.edit.text;
+    req.font_path = g_state.fonts[static_cast<size_t>(g_state.edit.font_index)].path;
+    req.depth = g_state.edit.depth;
+    req.bevel = g_state.edit.bevel;
+    req.fillet = g_state.edit.fillet;
+    req.inflate = g_state.edit.inflate;
+    req.tess_mode = tess_mode_from_ui(g_state.edit.tess_backend);
+    req.flatness = 0.4f;
+    req.scale = 1.0f / 128.0f;
+    req.per_glyph = g_state.anim_player.needs_per_glyph();
+    req.write_cache = g_state.edit.cache_write_geometry;
+    return req;
+}
 
-    text3d::LayoutOptions opt;
-    opt.extrude.depth = g_state.edit.depth;
-    opt.extrude.bevel = g_state.edit.bevel;
-    opt.extrude.fillet = g_state.edit.fillet;
-    opt.flatness = 0.4f;
-    opt.scale = 1.0f / 128.0f;
-    float edge_r_cap = 0.f;
-    opt.out_edge_r_cap = &edge_r_cap;
+bool request_same_content(const text3d::AsyncMeshBuildRequest& a,
+                          const text3d::AsyncMeshBuildRequest& b) {
+    return a.text == b.text && a.font_path == b.font_path &&
+           std::fabs(a.depth - b.depth) < 1e-4f && std::fabs(a.bevel - b.bevel) < 1e-4f &&
+           std::fabs(a.fillet - b.fillet) < 1e-4f && std::fabs(a.inflate - b.inflate) < 1e-4f &&
+           a.tess_mode == b.tess_mode && std::fabs(a.flatness - b.flatness) < 1e-6f &&
+           std::fabs(a.scale - b.scale) < 1e-8f && a.per_glyph == b.per_glyph &&
+           a.write_cache == b.write_cache;
+}
 
-    const std::string text = g_state.edit.text;
-    // 换几何时打断正在播的片段，避免旧时间轴套到新字上
+void submit_mesh_rebuild() {
+    text3d::AsyncMeshBuildRequest req = make_mesh_build_request();
+    // 已提交过且内容相同：不要每帧抬 generation，否则会清掉刚完成的结果导致永远 apply 不上
+    if (g_state.has_submitted_req && request_same_content(req, g_state.last_submitted_req)) {
+        g_state.mesh_build_inflight = g_state.mesh_builder.is_busy();
+        return;
+    }
+    g_state.last_submitted_req = req;
+    g_state.has_submitted_req = true;
+    g_state.mesh_builder.submit(std::move(req));
+    g_state.mesh_build_inflight = true;
+}
+
+void apply_mesh_result(text3d::Renderer& renderer, text3d::AsyncMeshBuildResult& result) {
+    g_state.last_build = result.build;
+
+    if (!result.ok) {
+        std::cerr << "[main] async build 失败: "
+                  << text3d::build_result_format(g_state.last_build) << "\n";
+        if (g_state.edit.font_index != g_state.applied_font_index &&
+            g_state.applied_font_index >= 0) {
+            g_state.edit.font_index = g_state.applied_font_index;
+        }
+        g_state.mesh_build_inflight = g_state.mesh_builder.is_busy();
+        return;
+    }
+
+    const auto t_upload0 = std::chrono::steady_clock::now();
+    g_state.perf.rebuild = result.timings;
     g_state.anim_player.stop_idle();
-    g_state.glyphs.clear();
 
-    if (text.empty()) {
-        renderer.upload_mesh({});
+    if (result.text.empty()) {
+        {
+            text3d::ScopedTimer upload_timer(&g_state.perf.rebuild.stage_upload_ms);
+            renderer.upload_mesh({});
+        }
+        g_state.glyphs.clear();
         g_state.use_per_glyph = false;
         g_state.perf.verts = 0;
         g_state.perf.tris = 0;
-        edge_r_cap = 0.f;
-    } else if (g_state.anim_player.needs_per_glyph()) {
-        // 逐字 mesh：才能各自绕字心做 model 变换
-        if (!text3d::layout_text_glyphs(font, text, opt, g_state.glyphs)) {
-            std::cerr << "[main] layout_text_glyphs 失败\n";
-            return false;
+        g_state.last_build.set_ok(0, 0);
+    } else if (result.use_per_glyph) {
+        {
+            text3d::ScopedTimer upload_timer(&g_state.perf.rebuild.stage_upload_ms);
+            renderer.upload_glyphs(result.glyphs);
         }
-        renderer.upload_glyphs(g_state.glyphs);
+        g_state.glyphs = std::move(result.glyphs);
         g_state.use_per_glyph = true;
         g_state.perf.verts = renderer.vertex_count();
         g_state.perf.tris = renderer.triangle_count();
+        g_state.last_build.set_ok(g_state.perf.verts, g_state.perf.tris);
     } else {
-        // 整句合并，一次 draw
-        text3d::Mesh mesh;
-        if (!text3d::layout_text(font, text, opt, mesh)) {
-            std::cerr << "[main] layout_text 失败\n";
-            return false;
+        {
+            text3d::ScopedTimer upload_timer(&g_state.perf.rebuild.stage_upload_ms);
+            renderer.upload_mesh(result.merged_mesh);
         }
-        renderer.upload_mesh(mesh);
+        g_state.glyphs.clear();
         g_state.use_per_glyph = false;
         g_state.perf.verts = renderer.vertex_count();
         g_state.perf.tris = renderer.triangle_count();
+        g_state.last_build.set_ok(g_state.perf.verts, g_state.perf.tris);
     }
 
-    const auto t1 = std::chrono::steady_clock::now();
-    g_state.perf.rebuild_ms = std::chrono::duration<float, std::milli>(t1 - t0).count();
-    g_state.applied_text = text;
-    g_state.applied_depth = g_state.edit.depth;
-    g_state.applied_bevel = g_state.edit.bevel;
-    g_state.applied_fillet = g_state.edit.fillet;
+    const auto t_upload1 = std::chrono::steady_clock::now();
+    const float upload_ms =
+        std::chrono::duration<float, std::milli>(t_upload1 - t_upload0).count();
+    g_state.perf.rebuild.stage_upload_ms = upload_ms;
+    g_state.perf.rebuild.total_ms = result.timings.total_ms + upload_ms;
+    g_state.bench_just_applied = true;
+    g_state.bench_apply_upload_ms = upload_ms;
+
+    g_state.perf.cache_outline = result.cache_outline;
+    g_state.perf.cache_planar = result.cache_planar;
+    g_state.perf.cache_mesh = result.cache_mesh;
+
+    {
+        const text3d::GpuUploadStats us = renderer.last_upload_stats();
+        g_state.perf.upload_slots_skipped = us.slots_skipped;
+        g_state.perf.upload_slots_uploaded = us.meshes_uploaded;
+        g_state.perf.upload_gpu_unique_buffers = us.unique_meshes;
+        g_state.perf.upload_bytes = us.bytes_uploaded;
+    }
+
+    g_state.applied_text = result.text;
+    g_state.applied_depth = result.depth;
+    g_state.applied_bevel = result.bevel;
+    g_state.applied_fillet = result.fillet;
+    g_state.applied_inflate = result.inflate;
     g_state.applied_font_index = g_state.edit.font_index;
     g_state.applied_anim_index = g_state.edit.anim_index;
-    g_state.applied_tess_backend = g_state.edit.tess_backend;
-    g_state.edit.edge_r_cap = edge_r_cap;
-    // 不重置 camera.target，保留右键平移
+    g_state.applied_tess_backend = result.tess_backend;
+    g_state.edit.applied_r_min = result.applied_r_min;
+    g_state.edit.applied_r_max = result.applied_r_max;
+    g_state.edit.safe_r_min = result.safe_r_min;
+    g_state.edit.applied_inflate_h = result.inflate_h_max;
 
-    std::cout << "[main] rebuild path=" << (g_state.use_per_glyph ? "per-glyph" : "merged")
-              << " tess=" << text3d::tess_backend_name(backend)
-              << " → " << g_state.perf.rebuild_ms << " ms"
-              << " verts=" << g_state.perf.verts << " tris=" << g_state.perf.tris
-              << " edge_r_cap=" << edge_r_cap << "\n";
-    return true;
+    std::cout << "[main] async apply path=" << (g_state.use_per_glyph ? "per-glyph" : "merged")
+              << " tess="
+              << text3d::tess_mode_name(tess_mode_from_ui(result.tess_backend))
+              << " applied_R=[" << result.applied_r_min << "," << result.applied_r_max << "]"
+              << " safe_R_min=" << result.safe_r_min << " inflate_H=" << result.inflate_h_max
+              << "\n"
+              << "[perf] " << text3d::perf_stats_format_full_log(g_state.perf) << "\n"
+              << "[build] " << text3d::build_result_format(g_state.last_build) << "\n";
+
+    g_state.mesh_build_inflight = g_state.mesh_builder.is_busy();
+}
+
+void poll_async_mesh_result(text3d::Renderer& renderer) {
+    text3d::AsyncMeshBuildResult result;
+    if (!g_state.mesh_builder.poll_result(result)) {
+        g_state.mesh_build_inflight = g_state.mesh_builder.is_busy();
+        return;
+    }
+    apply_mesh_result(renderer, result);
 }
 
 void set_vsync_enabled(bool enabled) {
@@ -308,8 +409,23 @@ void pace_frame_if_vsync_on(double frame_start) {
 
 int main(int argc, char** argv) {
     const char* cli_font = nullptr;
-    if (argc >= 2) {
-        cli_font = argv[1];
+    for (int i = 1; i < argc; ++i) {
+        const std::string a = argv[i];
+        if (a == "--bench") {
+            g_state.bench_mode = true;
+        } else if (a == "--out" && i + 1 < argc) {
+            g_state.bench_opt.out_path = argv[++i];
+        } else if (a == "--frames" && i + 1 < argc) {
+            g_state.bench_opt.sample_frames = std::max(1, std::atoi(argv[++i]));
+        } else if (a == "--warmup" && i + 1 < argc) {
+            g_state.bench_opt.warmup_frames = std::max(0, std::atoi(argv[++i]));
+        } else if (a == "--build-type" && i + 1 < argc) {
+            g_state.bench_opt.build_type = argv[++i];
+        } else if (a.rfind("-", 0) != 0) {
+            cli_font = argv[i];
+        } else {
+            std::cerr << "[main] unknown arg: " << a << "\n";
+        }
     }
 
     g_state.fonts.push_back(
@@ -329,8 +445,28 @@ int main(int argc, char** argv) {
 
     g_state.anim_options = text3d::list_anim_options();
     g_state.edit.anims = &g_state.anim_options;
-    g_state.edit.anim_index = 1;  // Appear Spin
+    g_state.edit.anim_index = g_state.bench_mode ? 0 : 1;
     g_state.anim_player.set_by_index(g_state.edit.anim_index);
+
+    if (g_state.bench_mode) {
+        g_state.edit.unlock_vsync = true;
+        g_state.edit.use_offscreen_canvas = true;
+        g_state.edit.canvas_size_index = 0;
+        for (int i = 0; i < static_cast<int>(g_state.fonts.size()); ++i) {
+            if (g_state.fonts[static_cast<size_t>(i)].id == "187086") {
+                g_state.edit.font_index = i;
+                break;
+            }
+        }
+        if (g_state.bench_opt.out_path.empty()) {
+            g_state.bench_opt.out_path =
+                std::string("docs/perf/bench-") + g_state.bench_opt.build_type + ".md";
+        }
+        g_state.bench_runner.configure(g_state.bench_opt);
+        std::cout << "[bench] mode on out=" << g_state.bench_opt.out_path
+                  << " warmup=" << g_state.bench_opt.warmup_frames
+                  << " frames=" << g_state.bench_opt.sample_frames << "\n";
+    }
 
     const std::string materials_root =
         std::string(TEXT3D_ASSETS_DIR) + "/textures/materials";
@@ -368,7 +504,9 @@ int main(int argc, char** argv) {
     glfwWindowHint(GLFW_SAMPLES, 4);
 
     GLFWwindow* window =
-        glfwCreateWindow(960, 640, "3D Text — FreeType outline extrude", nullptr, nullptr);
+        glfwCreateWindow(960, 640,
+                         g_state.bench_mode ? "3D Text — Bench" : "3D Text — FreeType outline extrude",
+                         nullptr, nullptr);
     if (!window) {
         glfwTerminate();
         return 1;
@@ -381,6 +519,10 @@ int main(int argc, char** argv) {
 
     set_vsync_enabled(true);
     g_state.vsync_unlocked = false;
+    if (g_state.bench_mode) {
+        g_state.edit.unlock_vsync = true;
+        apply_vsync_if_needed(window);
+    }
 
     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
     glfwSetMouseButtonCallback(window, mouse_button_callback);
@@ -399,13 +541,6 @@ int main(int argc, char** argv) {
     glEnable(GL_MULTISAMPLE);
     glClearColor(0.12f, 0.14f, 0.18f, 1.f);
 
-    text3d::FontFace font;
-    if (!font.load(start_font, 128)) {
-        return 1;
-    }
-    font.dump_info();
-    g_state.applied_font_index = g_state.edit.font_index;
-
     text3d::Renderer renderer;
     std::string shader_dir = TEXT3D_SHADER_DIR;
     if (!renderer.init(shader_dir)) {
@@ -415,31 +550,57 @@ int main(int argc, char** argv) {
         }
     }
 
+    text3d::OffscreenCanvas canvas;
+    text3d::ScreenPass screen_pass;
+    if (!screen_pass.init(shader_dir)) {
+        std::cerr << "[main] ScreenPass init failed\n";
+        return 1;
+    }
+
+    // 与当前 edit 对齐，避免首帧前 applied_*=-1 导致每帧反复 submit、结果永被丢弃
+    g_state.applied_font_index = g_state.edit.font_index;
+    g_state.applied_anim_index = g_state.edit.anim_index;
+    g_state.applied_tess_backend = g_state.edit.tess_backend;
+
+    g_state.mesh_builder.start();
+    submit_mesh_rebuild();
+    g_state.reload_mesh = false;
+
+    if (g_state.bench_mode) {
+        g_state.bench_runner.start();
+    }
+
     g_state.last_frame_time = glfwGetTime();
 
     while (!glfwWindowShouldClose(window)) {
         const double now = glfwGetTime();
         const float dt = static_cast<float>(now - g_state.last_frame_time);
         g_state.last_frame_time = now;
-        g_state.perf.frame_ms = dt * 1000.f;
+        g_state.perf.ui_frame_ms = dt * 1000.f;
         if (dt > 0.f) {
             const float instant_fps = 1.f / dt;
             g_state.fps_smooth = (g_state.fps_smooth <= 0.f)
                                      ? instant_fps
                                      : (g_state.fps_smooth * 0.9f + instant_fps * 0.1f);
-            g_state.perf.fps = g_state.fps_smooth;
+            g_state.perf.ui_fps = g_state.fps_smooth;
         }
+
+        g_state.bench_just_applied = false;
 
         text3d::debug_ui_begin_frame();
         g_state.edit.text_edited = false;
-        g_state.edit.request_play = false;
         g_state.edit.font_changed = false;
         g_state.edit.anim_changed = false;
         g_state.edit.tess_backend_changed = false;
         g_state.edit.pbr_material_changed = false;
         g_state.edit.request_rescan_materials = false;
-        text3d::debug_ui_draw(g_state.perf, g_state.edit, g_state.anim_player.playing(),
-                              g_state.use_per_glyph);
+        g_state.edit.cache_write_geometry = true;
+        if (!g_state.bench_mode) {
+            g_state.edit.request_play = false;
+            text3d::debug_ui_draw(g_state.perf, g_state.edit, g_state.anim_player.playing(),
+                                  g_state.use_per_glyph, &g_state.last_build,
+                                  g_state.mesh_build_inflight || g_state.mesh_builder.is_busy());
+        }
 
         if (g_state.edit.request_rescan_materials) {
             g_state.pbr_material_entries = text3d::scan_pbr_materials(materials_root);
@@ -489,7 +650,8 @@ int main(int argc, char** argv) {
         }
         if (std::fabs(g_state.edit.depth - g_state.applied_depth) > 1e-4f ||
             std::fabs(g_state.edit.bevel - g_state.applied_bevel) > 1e-4f ||
-            std::fabs(g_state.edit.fillet - g_state.applied_fillet) > 1e-4f) {
+            std::fabs(g_state.edit.fillet - g_state.applied_fillet) > 1e-4f ||
+            std::fabs(g_state.edit.inflate - g_state.applied_inflate) > 1e-4f) {
             g_state.reload_mesh = true;
         }
         if (g_state.text_pending && (now - g_state.text_edit_time) >= kTextDebounceSec) {
@@ -500,33 +662,66 @@ int main(int argc, char** argv) {
         }
 
         if (g_state.reload_font) {
-            const auto& fe = g_state.fonts[static_cast<size_t>(g_state.edit.font_index)];
-            if (!font.load(fe.path, 128)) {
-                g_state.edit.font_index = g_state.applied_font_index;
-            } else {
-                font.dump_info();
-                g_state.reload_mesh = true;
-            }
+            g_state.reload_mesh = true;
             g_state.reload_font = false;
         }
 
+        // 先取结果并更新 applied_*，再决定是否 submit，避免「未 apply 又 submit」清掉完成槽
+        poll_async_mesh_result(renderer);
+
         if (g_state.reload_mesh) {
-            rebuild_and_upload(font, renderer);
+            submit_mesh_rebuild();
             g_state.reload_mesh = false;
         }
 
         if (g_state.edit.request_play && g_state.use_per_glyph) {
             g_state.anim_player.play();
             std::cout << "[main] Anim Play\n";
+            g_state.edit.request_play = false;
         }
 
         g_state.anim_player.update(dt);
 
         apply_vsync_if_needed(window);
 
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         glfwGetFramebufferSize(window, &fbw, &fbh);
-        const float aspect = (fbh > 0) ? static_cast<float>(fbw) / static_cast<float>(fbh) : 1.f;
+
+        const bool use_canvas = g_state.edit.use_offscreen_canvas;
+        int canvas_w = 1280;
+        int canvas_h = 720;
+        if (g_state.edit.canvas_size_index == 1) {
+            canvas_w = 1920;
+            canvas_h = 1080;
+        }
+
+        g_state.perf.offscreen_pass_ms = 0.f;
+        g_state.perf.offscreen_compose_ms = 0.f;
+        g_state.perf.present_ms = 0.f;
+
+        if (use_canvas) {
+            text3d::ScopedTimer off_timer(&g_state.perf.offscreen_pass_ms);
+            if (!canvas.ensure(canvas_w, canvas_h)) {
+                std::cerr << "[main] canvas ensure failed, fallback direct draw\n";
+                g_state.edit.use_offscreen_canvas = false;
+            } else {
+                canvas.begin();
+                glClearColor(0.12f, 0.14f, 0.18f, 1.f);
+                glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            }
+        }
+
+        if (!g_state.edit.use_offscreen_canvas) {
+            glViewport(0, 0, fbw, fbh > 0 ? fbh : 1);
+            glClearColor(0.12f, 0.14f, 0.18f, 1.f);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        }
+
+        const bool drawing_to_canvas = g_state.edit.use_offscreen_canvas && canvas.valid();
+        const float aspect = drawing_to_canvas
+                                 ? (static_cast<float>(canvas.width()) /
+                                    static_cast<float>(canvas.height() > 0 ? canvas.height() : 1))
+                                 : ((fbh > 0) ? static_cast<float>(fbw) / static_cast<float>(fbh)
+                                              : 1.f);
 
         const glm::mat4 view = g_state.camera.view();
         const glm::mat4 proj = g_state.camera.projection(aspect);
@@ -559,44 +754,106 @@ int main(int argc, char** argv) {
             }
         }
 
-        if (g_state.use_per_glyph) {
-            // 动画只给标量；矩阵在此按相机方向组装
-            text3d::AnimSample sample;
-            g_state.anim_player.sample(sample);
+        const auto render_submit_t0 = std::chrono::steady_clock::now();
+        g_state.perf.text_draw_ms = 0.f;
+        {
+            text3d::ScopedTimer text_draw_timer(&g_state.perf.text_draw_ms);
+            if (g_state.use_per_glyph) {
+                // 动画只给标量；矩阵在此按相机方向组装，再实例化合批
+                text3d::AnimSample sample;
+                g_state.anim_player.sample(sample);
 
-            glm::vec3 toward_cam = g_state.camera.eye() - g_state.camera.target;
-            if (glm::dot(toward_cam, toward_cam) > 1e-8f) {
-                toward_cam = glm::normalize(toward_cam);
+                glm::vec3 toward_cam = g_state.camera.eye() - g_state.camera.target;
+                if (glm::dot(toward_cam, toward_cam) > 1e-8f) {
+                    toward_cam = glm::normalize(toward_cam);
+                } else {
+                    toward_cam = glm::vec3(0.f, 0.f, 1.f);
+                }
+                const glm::vec3 near_offset =
+                    toward_cam * (sample.near_distance * sample.approach);
+
+                const glm::mat4 view_proj = proj * view;
+                std::vector<glm::mat4> models(g_state.glyphs.size());
+                for (int i = 0; i < static_cast<int>(g_state.glyphs.size()); ++i) {
+                    const auto& g = g_state.glyphs[static_cast<size_t>(i)];
+                    glm::mat4 model(1.f);
+                    model = glm::translate(
+                        model, glm::vec3(g.rest_x, g.rest_y, 0.f) + near_offset);
+                    model = glm::rotate(model, sample.angle_y, glm::vec3(0.f, 1.f, 0.f));
+                    models[static_cast<size_t>(i)] = model;
+                }
+                renderer.draw_glyphs_instanced(models.data(),
+                                               static_cast<int>(models.size()),
+                                               glm::value_ptr(view_proj), draw_params);
+                g_state.perf.draw_batches = renderer.last_draw_batches();
+                g_state.perf.gl_draw_calls = renderer.last_gl_draw_calls();
             } else {
-                toward_cam = glm::vec3(0.f, 0.f, 1.f);
-            }
-            // approach: 1→0 时，近处偏移从最大收到 0
-            const glm::vec3 near_offset =
-                toward_cam * (sample.near_distance * sample.approach);
-
-            for (int i = 0; i < static_cast<int>(g_state.glyphs.size()); ++i) {
-                const auto& g = g_state.glyphs[static_cast<size_t>(i)];
-                glm::mat4 model(1.f);
-                // 几何本地原点已是字心，绕 Y = 绕字自身转
-                model = glm::translate(
-                    model, glm::vec3(g.rest_x, g.rest_y, 0.f) + near_offset);
-                model = glm::rotate(model, sample.angle_y, glm::vec3(0.f, 1.f, 0.f));
+                const glm::mat4 model(1.f);
                 const glm::mat4 mvp = proj * view * model;
-                renderer.draw_glyph(i, glm::value_ptr(mvp), glm::value_ptr(model),
-                                    draw_params);
+                renderer.draw(glm::value_ptr(mvp), glm::value_ptr(model), draw_params);
+                g_state.perf.draw_batches = renderer.last_draw_batches();
+                g_state.perf.gl_draw_calls = renderer.last_gl_draw_calls();
             }
-        } else {
-            const glm::mat4 model(1.f);
-            const glm::mat4 mvp = proj * view * model;
-            renderer.draw(glm::value_ptr(mvp), glm::value_ptr(model), draw_params);
+        }
+
+        if (drawing_to_canvas) {
+            canvas.end();
+            {
+                text3d::ScopedTimer present_timer(&g_state.perf.present_ms);
+                glBindFramebuffer(GL_FRAMEBUFFER, 0);
+                glViewport(0, 0, fbw, fbh > 0 ? fbh : 1);
+                glClearColor(0.f, 0.f, 0.f, 1.f);
+                glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+                screen_pass.draw(canvas.color_tex(), 1.f);
+            }
         }
 
         text3d::debug_ui_end_frame();
+        const auto render_submit_t1 = std::chrono::steady_clock::now();
+        g_state.perf.render_submit_ms =
+            std::chrono::duration<float, std::milli>(render_submit_t1 - render_submit_t0).count();
+
+        if (g_state.bench_mode && !g_state.bench_runner.finished()) {
+            text3d::BenchFrameContext bctx;
+            bctx.edit = &g_state.edit;
+            bctx.perf = &g_state.perf;
+            bctx.now = now;
+            bctx.mesh_busy = g_state.mesh_build_inflight || g_state.mesh_builder.is_busy();
+            bctx.applied_text = g_state.applied_text;
+            bctx.applied_depth = g_state.applied_depth;
+            bctx.applied_inflate = g_state.applied_inflate;
+            bctx.applied_anim_index = g_state.applied_anim_index;
+            bctx.just_applied = g_state.bench_just_applied;
+            bctx.apply_upload_ms = g_state.bench_apply_upload_ms;
+            bctx.reload_mesh = &g_state.reload_mesh;
+            bctx.request_orbit = &g_state.bench_request_orbit;
+            const bool still = g_state.bench_runner.tick(bctx);
+            if (g_state.bench_request_orbit) {
+                g_state.camera.yaw_deg += 1.5f;
+                g_state.bench_request_orbit = false;
+            }
+            if (!still || g_state.bench_runner.finished()) {
+                const auto gates = g_state.bench_runner.evaluate_gates();
+                if (!text3d::write_bench_report_markdown(g_state.bench_opt.out_path,
+                                                         g_state.bench_opt,
+                                                         g_state.bench_runner.results(), gates)) {
+                    std::cerr << "[bench] write report failed: " << g_state.bench_opt.out_path
+                              << "\n";
+                } else {
+                    std::cout << "[bench] wrote " << g_state.bench_opt.out_path << "\n";
+                }
+                glfwSetWindowShouldClose(window, GLFW_TRUE);
+            }
+        }
+
         glfwSwapBuffers(window);
         glfwPollEvents();
         pace_frame_if_vsync_on(now);
     }
 
+    g_state.mesh_builder.stop();
+    screen_pass.shutdown();
+    canvas.destroy();
     text3d::debug_ui_shutdown();
     g_state.active_pbr_material.destroy();
     glfwDestroyWindow(window);
