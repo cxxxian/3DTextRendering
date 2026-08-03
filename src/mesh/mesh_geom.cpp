@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 
 namespace text3d {
 
@@ -100,6 +101,7 @@ void face_normal_from_quad(float ax, float ay, float az, float bx, float by, flo
 
 void append_caps(Mesh& out, const std::vector<float>& xy, const std::vector<unsigned int>& tris,
                  float z_top, float z_bot, float minx, float miny, float sx, float sy) {
+    const std::size_t front_begin = out.indices.size();
     const unsigned int top_base = static_cast<unsigned>(out.vertices.size());
     const int vert_count = static_cast<int>(xy.size() / 2);
     for (int i = 0; i < vert_count; ++i) {
@@ -114,7 +116,9 @@ void append_caps(Mesh& out, const std::vector<float>& xy, const std::vector<unsi
         out.indices.push_back(top_base + tris[t + 1]);
         out.indices.push_back(top_base + tris[t + 2]);
     }
+    out.set_part(MeshPart::Front, front_begin, out.indices.size());
 
+    const std::size_t back_begin = out.indices.size();
     const unsigned int bot_base = static_cast<unsigned>(out.vertices.size());
     for (int i = 0; i < vert_count; ++i) {
         const float x = xy[static_cast<size_t>(i) * 2];
@@ -128,9 +132,11 @@ void append_caps(Mesh& out, const std::vector<float>& xy, const std::vector<unsi
         out.indices.push_back(bot_base + tris[t + 2]);
         out.indices.push_back(bot_base + tris[t + 1]);
     }
+    out.set_part(MeshPart::Back, back_begin, out.indices.size());
 }
 
 void append_straight_sides(Mesh& out, const GlyphOutline& outline, float z_top, float z_bot) {
+    const std::size_t side_begin = out.indices.size();
     for (const Contour& c : outline.contours) {
         const size_t n = c.points.size();
         if (n < 2) {
@@ -155,12 +161,16 @@ void append_straight_sides(Mesh& out, const GlyphOutline& outline, float z_top, 
                              z_bot, u0, u1, 0.f, 1.f, -nx, -ny, 0.f);
         }
     }
+    if (out.indices.size() > side_begin) {
+        out.set_part(MeshPart::Side, side_begin, out.indices.size());
+    }
 }
 
 void append_outer_walls(Mesh& out, const GlyphOutline& outer, float z_wall_top, float z_wall_bot) {
     if (std::fabs(z_wall_top - z_wall_bot) < 0.05f) {
         return;
     }
+    const std::size_t side_begin = out.indices.size();
     for (const Contour& c : outer.contours) {
         const size_t n = c.points.size();
         if (n < 2) {
@@ -183,6 +193,9 @@ void append_outer_walls(Mesh& out, const GlyphOutline& outer, float z_wall_top, 
             append_band_quad(out, A.x, A.y, z_wall_top, B.x, B.y, z_wall_top, B.x, B.y, z_wall_bot,
                              A.x, A.y, z_wall_bot, u0, u1, 0.f, 1.f, -wx, -wy, 0.f);
         }
+    }
+    if (out.indices.size() > side_begin) {
+        out.set_part(MeshPart::Side, side_begin, out.indices.size());
     }
 }
 
