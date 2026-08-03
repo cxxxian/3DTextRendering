@@ -3,6 +3,8 @@
  * 棱剖面策略接口（Bevel / Fillet）。
  * 公共管线只调 append_caps / append_rims，再统一 append_outer_walls；
  * 策略不写外轮廓直墙，避免与 geom 重复。
+ * 分区归属：caps → Front/Back；chamfer rims → Bevel；fillet rims → Rounded；
+ * outer_walls → Side。
  */
 
 #include "mesh/mesh_types.h"
@@ -22,13 +24,14 @@ struct EdgeBuildContext {
     float half = 0.f;                                   // depth/2
     float radius = 0.f;                                 // 已钳制的 R
     float minx = 0.f, miny = 0.f, sx = 1.f, sy = 1.f;  // 外轮廓 bbox → UV
+    float inflate_h = 0.f;                              // Cap Inflate 拱高（字体单位）
 };
 
 struct IEdgeProfile {
     virtual ~IEdgeProfile() = default;
 
-    /* 写正/背面（平面或轻拱） */
-    virtual void append_caps(Mesh& out, const EdgeBuildContext& ctx) const = 0;
+    /* 写正/背面（平面或鼓包）；返回是否真正鼓起 */
+    virtual bool append_caps(Mesh& out, const EdgeBuildContext& ctx) const = 0;
 
     /* 写上下棱过渡带：内面边缘 ↔ 外墙顶/底（不含直墙） */
     virtual void append_rims(Mesh& out, const EdgeBuildContext& ctx) const = 0;

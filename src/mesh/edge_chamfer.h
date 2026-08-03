@@ -8,7 +8,7 @@
 namespace text3d {
 
 struct ChamferProfile : IEdgeProfile {
-    void append_caps(Mesh& out, const EdgeBuildContext& ctx) const override;
+    bool append_caps(Mesh& out, const EdgeBuildContext& ctx) const override;
     void append_rims(Mesh& out, const EdgeBuildContext& ctx) const override;
 };
 
