@@ -411,9 +411,9 @@ void debug_ui_draw(const PerfStats& perf, EditParams& edit, bool anim_playing,
         ImGui::Separator();
         ImGui::Checkbox("Offscreen canvas (#14)", &edit.use_offscreen_canvas);
         if (edit.use_offscreen_canvas) {
-            const char* canvas_labels[] = {"1280x720", "1920x1080"};
-            ImGui::Combo("Canvas size", &edit.canvas_size_index, canvas_labels, 2);
-            ImGui::TextDisabled("Blank clear each frame; Screen present to window");
+            const char* canvas_labels[] = {"720p height", "1080p height"};
+            ImGui::Combo("Canvas height", &edit.canvas_size_index, canvas_labels, 2);
+            ImGui::TextDisabled("Width follows window aspect (bench keeps 16:9)");
         } else {
             ImGui::TextDisabled("Direct window draw (legacy path)");
         }

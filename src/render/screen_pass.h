@@ -1,6 +1,6 @@
 #pragma once
 /*
- * #14 Screen Present：全屏采样离屏色附件贴到当前 FB（默认窗口）。
+ * #14 Screen Present：采样离屏色附件，全屏贴到当前 FB（调用方保证宽高比一致）。
  */
 
 #include <string>

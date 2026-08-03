@@ -687,11 +687,18 @@ int main(int argc, char** argv) {
         glfwGetFramebufferSize(window, &fbw, &fbh);
 
         const bool use_canvas = g_state.edit.use_offscreen_canvas;
-        int canvas_w = 1280;
-        int canvas_h = 720;
-        if (g_state.edit.canvas_size_index == 1) {
-            canvas_w = 1920;
-            canvas_h = 1080;
+        // 固定竖直分辨率（720/1080）；交互模式宽度跟窗口宽高比走，
+        // 左右拉宽会多渲真实场景背景，投影 aspect 同步所以字不扁。
+        // bench 仍用固定 16:9，保证报告可比。
+        const int canvas_h = (g_state.edit.canvas_size_index == 1) ? 1080 : 720;
+        int canvas_w = (g_state.edit.canvas_size_index == 1) ? 1920 : 1280;
+        if (!g_state.bench_mode) {
+            const float win_aspect =
+                (fbh > 0) ? static_cast<float>(fbw) / static_cast<float>(fbh) : (16.f / 9.f);
+            canvas_w = std::max(8, static_cast<int>(std::lround(static_cast<float>(canvas_h) *
+                                                                win_aspect)));
+            canvas_w = (canvas_w + 7) / 8 * 8;  // 对齐，减少拖拽时 FBO 重建抖动
+            canvas_w = std::min(canvas_w, 4096);
         }
 
         g_state.perf.offscreen_pass_ms = 0.f;
@@ -711,7 +718,7 @@ int main(int argc, char** argv) {
         }
 
         if (!g_state.edit.use_offscreen_canvas) {
-            glViewport(0, 0, fbw, fbh > 0 ? fbh : 1);
+            glViewport(0, 0, fbw > 0 ? fbw : 1, fbh > 0 ? fbh : 1);
             glClearColor(0.12f, 0.14f, 0.18f, 1.f);
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         }
@@ -801,8 +808,9 @@ int main(int argc, char** argv) {
             {
                 text3d::ScopedTimer present_timer(&g_state.perf.present_ms);
                 glBindFramebuffer(GL_FRAMEBUFFER, 0);
-                glViewport(0, 0, fbw, fbh > 0 ? fbh : 1);
-                glClearColor(0.f, 0.f, 0.f, 1.f);
+                // 画布宽高比已对齐窗口，全屏贴不会拉扁；多出的是场景里渲出来的背景。
+                glViewport(0, 0, fbw > 0 ? fbw : 1, fbh > 0 ? fbh : 1);
+                glClearColor(0.12f, 0.14f, 0.18f, 1.f);
                 glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
                 screen_pass.draw(canvas.color_tex(), 1.f);
             }

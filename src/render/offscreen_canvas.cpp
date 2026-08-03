@@ -73,7 +73,6 @@ bool OffscreenCanvas::ensure(int width, int height) {
 
     width_ = width;
     height_ = height;
-    std::cout << "[offscreen] canvas ready " << width_ << "x" << height_ << "\n";
     return true;
 }
 

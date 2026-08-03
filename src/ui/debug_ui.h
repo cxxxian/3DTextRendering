@@ -29,7 +29,7 @@ struct EditParams {
     float applied_inflate_h = 0.f;  // rebuild 后实际拱高（取各字最大）
     bool unlock_vsync = false;
     bool use_offscreen_canvas = true;  // #14：默认离屏画布
-    int canvas_size_index = 0;         // 0=1280x720，1=1920x1080
+    int canvas_size_index = 0;         // 0=720p 高，1=1080p 高；交互宽度跟窗口 aspect
     bool text_edited = false;
 
     /* 几何滑条 Active（拖动或 Ctrl+输入中）时为 false：预览 rebuild 但不 put L1/Mesh */
