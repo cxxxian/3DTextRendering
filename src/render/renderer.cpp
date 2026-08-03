@@ -1,13 +1,18 @@
 /*
- * Renderer 实现：着色器加载、整句/逐字上传、按 ShadingModel 绘制。
+ * Renderer 实现：着色器加载、整句/逐字上传（#12 池共享）、实例化绘制。
  */
 
 #include "render/renderer.h"
 
+#include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <fstream>
 #include <iostream>
 #include <sstream>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
 
 #include <glad/gl.h>
 
@@ -83,11 +88,51 @@ void set_uniform1f(int loc, float v) {
     }
 }
 
+void set_uniform1i(int loc, int v) {
+    if (loc >= 0) {
+        glUniform1i(loc, v);
+    }
+}
+
+void fnv1a_mix_bytes(std::uint64_t& h, const void* data, std::size_t nbytes) {
+    const auto* p = static_cast<const std::uint8_t*>(data);
+    for (std::size_t i = 0; i < nbytes; ++i) {
+        h ^= p[i];
+        h *= 1099511628211ull;
+    }
+}
+
+std::uint64_t mesh_fingerprint(const Mesh& mesh) {
+    if (mesh.vertices.empty() && mesh.indices.empty()) {
+        return 0;
+    }
+    std::uint64_t h = 14695981039346656037ull;
+    const std::uint64_t nv = static_cast<std::uint64_t>(mesh.vertices.size());
+    const std::uint64_t ni = static_cast<std::uint64_t>(mesh.indices.size());
+    fnv1a_mix_bytes(h, &nv, sizeof(nv));
+    fnv1a_mix_bytes(h, &ni, sizeof(ni));
+    if (!mesh.vertices.empty()) {
+        fnv1a_mix_bytes(h, mesh.vertices.data(), mesh.vertices.size() * sizeof(Vertex));
+    }
+    if (!mesh.indices.empty()) {
+        fnv1a_mix_bytes(h, mesh.indices.data(), mesh.indices.size() * sizeof(unsigned int));
+    }
+    return h;
+}
+
+std::size_t mesh_upload_bytes(const Mesh& mesh) {
+    return mesh.vertices.size() * sizeof(Vertex) + mesh.indices.size() * sizeof(unsigned int);
+}
+
 }  // namespace
 
 Renderer::~Renderer() {
     clear_glyphs_();
     clear_merged_();
+    if (instance_vbo_) {
+        glDeleteBuffers(1, &instance_vbo_);
+        instance_vbo_ = 0;
+    }
     if (lambert_.program) {
         glDeleteProgram(lambert_.program);
         lambert_.program = 0;
@@ -120,15 +165,14 @@ void Renderer::clear_merged_() {
         vao_ = 0;
     }
     index_count_ = 0;
+    vertex_count_ = 0;
+    merged_fingerprint_ = 0;
+    merged_uploaded_once_ = false;
 }
 
 void Renderer::clear_glyphs_() {
-    for (auto& g : glyphs_) {
-        if (g.ebo) glDeleteBuffers(1, &g.ebo);
-        if (g.vbo) glDeleteBuffers(1, &g.vbo);
-        if (g.vao) glDeleteVertexArrays(1, &g.vao);
-    }
     glyphs_.clear();
+    pool_.clear();
 }
 
 void Renderer::upload_into_(unsigned int vao, unsigned int vbo, unsigned int ebo,
@@ -150,9 +194,22 @@ void Renderer::upload_into_(unsigned int vao, unsigned int vbo, unsigned int ebo
     glBindVertexArray(0);
 }
 
+void Renderer::bind_instance_attribs_() const {
+    const int stride = static_cast<int>(sizeof(glm::mat4));
+    for (int i = 0; i < 4; ++i) {
+        const unsigned int loc = static_cast<unsigned int>(3 + i);
+        glEnableVertexAttribArray(loc);
+        glVertexAttribPointer(loc, 4, GL_FLOAT, GL_FALSE, stride,
+                              reinterpret_cast<void*>(sizeof(float) * 4 * i));
+        glVertexAttribDivisor(loc, 1);
+    }
+}
+
 void Renderer::cache_locations_(ProgramLocs& locs) {
     locs.mvp = glGetUniformLocation(locs.program, "uMVP");
     locs.model = glGetUniformLocation(locs.program, "uModel");
+    locs.vp = glGetUniformLocation(locs.program, "uVP");
+    locs.use_instance = glGetUniformLocation(locs.program, "uUseInstance");
     locs.light_dir = glGetUniformLocation(locs.program, "uLightDir");
     locs.light_color = glGetUniformLocation(locs.program, "uLightColor");
     locs.camera_pos = glGetUniformLocation(locs.program, "uCameraPos");
@@ -210,18 +267,30 @@ bool Renderer::init(const std::string& shader_dir) {
     glGenVertexArrays(1, &vao_);
     glGenBuffers(1, &vbo_);
     glGenBuffers(1, &ebo_);
+    glGenBuffers(1, &instance_vbo_);
     glBindVertexArray(vao_);
     glBindBuffer(GL_ARRAY_BUFFER, vbo_);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo_);
     setup_vertex_attribs();
     glBindVertexArray(0);
 
-    std::cout << "[renderer] 着色器就绪 (Lambert / Phong / PBR / Glass)\n";
+    std::cout << "[renderer] 着色器就绪 (Lambert / Phong / PBR / Glass, #12 instancing)\n";
     return true;
 }
 
 void Renderer::upload_mesh(const Mesh& mesh) {
     clear_glyphs_();
+
+    const std::uint64_t fp = mesh_fingerprint(mesh);
+    const int vert_n = static_cast<int>(mesh.vertices.size());
+    const int index_n = static_cast<int>(mesh.indices.size());
+
+    if (merged_uploaded_once_ && vao_ && fp == merged_fingerprint_ &&
+        vert_n == vertex_count_ && index_n == index_count_) {
+        last_upload_stats_ = GpuUploadStats{GpuUploadKind::Skip, 0, 1, 0, 1, 0};
+        std::cout << "[renderer] 整句 mesh Skip (fingerprint hit)\n";
+        return;
+    }
 
     if (!vao_) {
         glGenVertexArrays(1, &vao_);
@@ -230,31 +299,137 @@ void Renderer::upload_mesh(const Mesh& mesh) {
     }
 
     upload_into_(vao_, vbo_, ebo_, mesh, index_count_);
-    vertex_count_ = static_cast<int>(mesh.vertices.size());
+    vertex_count_ = vert_n;
+    merged_fingerprint_ = fp;
+    merged_uploaded_once_ = true;
+    last_upload_stats_ =
+        GpuUploadStats{GpuUploadKind::Upload, mesh_upload_bytes(mesh), 0, 1, 1, 1};
 
     std::cout << "[renderer] 上传整句 mesh: verts=" << mesh.vertices.size()
-              << " indices=" << mesh.indices.size() << "\n";
+              << " indices=" << mesh.indices.size()
+              << " bytes=" << last_upload_stats_.bytes_uploaded << "\n";
 }
 
 void Renderer::upload_glyphs(const std::vector<GlyphInstance>& glyphs) {
-    clear_glyphs_();
     index_count_ = 0;
-    vertex_count_ = 0;
+    merged_fingerprint_ = 0;
+    merged_uploaded_once_ = false;
 
-    glyphs_.resize(glyphs.size());
-    for (size_t i = 0; i < glyphs.size(); ++i) {
-        auto& gpu = glyphs_[i];
-        glGenVertexArrays(1, &gpu.vao);
-        glGenBuffers(1, &gpu.vbo);
-        glGenBuffers(1, &gpu.ebo);
-        upload_into_(gpu.vao, gpu.vbo, gpu.ebo, glyphs[i].mesh, gpu.index_count);
-        vertex_count_ += static_cast<int>(glyphs[i].mesh.vertices.size());
-        index_count_ += gpu.index_count;
+    const std::size_t new_n = glyphs.size();
+    const std::size_t old_n = glyphs_.size();
+
+    auto slot_unchanged = [](const GlyphInstance& src, const GpuGlyphSlot& gpu) -> bool {
+        if (!src.mesh) {
+            return gpu.mesh_ptr == nullptr && gpu.fingerprint == 0;
+        }
+        if (gpu.fingerprint == 0) {
+            return false;
+        }
+        if (src.mesh.get() == gpu.mesh_ptr) {
+            return true;
+        }
+        return mesh_fingerprint(*src.mesh) == gpu.fingerprint;
+    };
+
+    if (new_n == old_n && new_n > 0) {
+        bool all_same = true;
+        for (std::size_t i = 0; i < new_n; ++i) {
+            if (!slot_unchanged(glyphs[i], glyphs_[i])) {
+                all_same = false;
+                break;
+            }
+        }
+        if (all_same) {
+            int verts = 0;
+            int sum_idx = 0;
+            for (std::size_t i = 0; i < new_n; ++i) {
+                if (glyphs[i].mesh) {
+                    verts += static_cast<int>(glyphs[i].mesh->vertices.size());
+                }
+                sum_idx += glyphs_[i].index_count;
+            }
+            vertex_count_ = verts;
+            index_count_ = sum_idx;
+            last_upload_stats_ = GpuUploadStats{
+                GpuUploadKind::Skip,
+                0,
+                static_cast<int>(new_n),
+                0,
+                pool_.size(),
+                0,
+            };
+            std::cout << "[renderer] 逐字 glyphs Skip all slots=" << new_n
+                      << " unique=" << pool_.size()
+                      << " total_verts=" << vertex_count_
+                      << " total_indices=" << sum_idx << "\n";
+            return;
+        }
     }
 
-    std::cout << "[renderer] 上传逐字 glyphs=" << glyphs.size()
+    if (new_n > old_n) {
+        glyphs_.resize(new_n);
+    }
+
+    int skipped = 0;
+    int meshes_uploaded = 0;
+    std::size_t bytes = 0;
+    int verts = 0;
+    int inds = 0;
+    std::unordered_set<std::uint64_t> used_fps;
+
+    for (std::size_t i = 0; i < new_n; ++i) {
+        GpuGlyphSlot& gpu = glyphs_[i];
+        const GlyphInstance& src = glyphs[i];
+
+        if (!src.mesh) {
+            gpu = GpuGlyphSlot{};
+            continue;
+        }
+
+        if (slot_unchanged(src, gpu)) {
+            ++skipped;
+            verts += static_cast<int>(src.mesh->vertices.size());
+            inds += gpu.index_count;
+            gpu.mesh_ptr = src.mesh.get();
+            used_fps.insert(gpu.fingerprint);
+            continue;
+        }
+
+        const std::uint64_t fp = mesh_fingerprint(*src.mesh);
+        bool uploaded = false;
+        GpuMeshEntry* entry = pool_.acquire(fp, *src.mesh, &uploaded);
+        if (uploaded) {
+            ++meshes_uploaded;
+            bytes += mesh_upload_bytes(*src.mesh);
+        }
+        gpu.fingerprint = fp;
+        gpu.mesh_ptr = src.mesh.get();
+        gpu.index_count = entry ? entry->index_count : 0;
+        used_fps.insert(fp);
+        verts += static_cast<int>(src.mesh->vertices.size());
+        inds += gpu.index_count;
+    }
+
+    glyphs_.resize(new_n);
+    pool_.retain_only(used_fps);
+
+    vertex_count_ = verts;
+    index_count_ = inds;
+    last_upload_stats_ = GpuUploadStats{
+        meshes_uploaded == 0 ? GpuUploadKind::Skip : GpuUploadKind::Upload,
+        bytes,
+        skipped,
+        meshes_uploaded,
+        pool_.size(),
+        meshes_uploaded,
+    };
+
+    std::cout << "[renderer] 上传逐字 glyphs=" << new_n
+              << " skip=" << skipped << " up=" << meshes_uploaded
+              << " unique=" << pool_.size()
+              << " bytes=" << bytes
               << " total_verts=" << vertex_count_
-              << " total_indices=" << index_count_ << "\n";
+              << " total_indices=" << inds << "\n";
 }
 
 const Renderer::ProgramLocs& Renderer::program_for_(ShadingModel shading) const {
@@ -278,7 +453,6 @@ void Renderer::bind_draw_params_(const ProgramLocs& locs, const DrawParams& para
     set_uniform3(locs.albedo, params.albedo);
     set_uniform1f(locs.ambient, params.light.ambient);
     set_uniform1f(locs.metallic, params.metallic);
-    // roughness 过低时 GGX 数值不稳
     const float roughness = params.roughness < 0.04f ? 0.04f : params.roughness;
     set_uniform1f(locs.roughness, roughness);
     set_uniform1f(locs.shininess, params.shininess);
@@ -288,27 +462,13 @@ void Renderer::bind_draw_params_(const ProgramLocs& locs, const DrawParams& para
     const int use_albedo = params.albedo_map != 0 ? 1 : 0;
     const int use_orm = params.orm_map != 0 ? 1 : 0;
     const int use_normal = params.normal_map != 0 ? 1 : 0;
-    if (locs.use_albedo_map >= 0) {
-        glUniform1i(locs.use_albedo_map, use_albedo);
-    }
-    if (locs.use_orm_map >= 0) {
-        glUniform1i(locs.use_orm_map, use_orm);
-    }
-    if (locs.use_normal_map >= 0) {
-        glUniform1i(locs.use_normal_map, use_normal);
-    }
-    if (locs.orm_layout >= 0) {
-        glUniform1i(locs.orm_layout, params.orm_layout);
-    }
-    if (locs.albedo_map >= 0) {
-        glUniform1i(locs.albedo_map, 0);
-    }
-    if (locs.orm_map >= 0) {
-        glUniform1i(locs.orm_map, 1);
-    }
-    if (locs.normal_map >= 0) {
-        glUniform1i(locs.normal_map, 2);
-    }
+    set_uniform1i(locs.use_albedo_map, use_albedo);
+    set_uniform1i(locs.use_orm_map, use_orm);
+    set_uniform1i(locs.use_normal_map, use_normal);
+    set_uniform1i(locs.orm_layout, params.orm_layout);
+    set_uniform1i(locs.albedo_map, 0);
+    set_uniform1i(locs.orm_map, 1);
+    set_uniform1i(locs.normal_map, 2);
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, use_albedo ? params.albedo_map : 0);
@@ -327,6 +487,7 @@ void Renderer::draw_with_(const ProgramLocs& locs, unsigned int vao, int index_c
     }
 
     glUseProgram(locs.program);
+    set_uniform1i(locs.use_instance, 0);
     glUniformMatrix4fv(locs.mvp, 1, GL_FALSE, mvp16);
     glUniformMatrix4fv(locs.model, 1, GL_FALSE, model16);
     bind_draw_params_(locs, params);
@@ -334,7 +495,6 @@ void Renderer::draw_with_(const ProgramLocs& locs, unsigned int vao, int index_c
     glBindVertexArray(vao);
 
     if (params.shading == ShadingModel::Glass) {
-        // 透明：先背面再正面；写深度避免后续误盖过
         GLboolean depth_mask = GL_TRUE;
         glGetBooleanv(GL_DEPTH_WRITEMASK, &depth_mask);
         GLboolean cull_was = glIsEnabled(GL_CULL_FACE);
@@ -366,11 +526,122 @@ void Renderer::draw_with_(const ProgramLocs& locs, unsigned int vao, int index_c
     glBindVertexArray(0);
 }
 
-void Renderer::draw(const float* mvp16, const float* model16, const DrawParams& params) const {
-    if (index_count_ <= 0 || !vao_ || !glyphs_.empty()) {
+void Renderer::draw_instanced_with_(const ProgramLocs& locs, unsigned int vao, int index_count,
+                                   int instance_count, const float* vp16,
+                                   const DrawParams& params) const {
+    if (!locs.program || index_count <= 0 || !vao || instance_count <= 0) {
         return;
     }
+
+    glUseProgram(locs.program);
+    set_uniform1i(locs.use_instance, 1);
+    glUniformMatrix4fv(locs.vp, 1, GL_FALSE, vp16);
+    bind_draw_params_(locs, params);
+
+    glBindVertexArray(vao);
+    glBindBuffer(GL_ARRAY_BUFFER, instance_vbo_);
+    bind_instance_attribs_();
+
+    if (params.shading == ShadingModel::Glass) {
+        GLboolean depth_mask = GL_TRUE;
+        glGetBooleanv(GL_DEPTH_WRITEMASK, &depth_mask);
+        GLboolean cull_was = glIsEnabled(GL_CULL_FACE);
+        GLint cull_face = GL_BACK;
+        glGetIntegerv(GL_CULL_FACE_MODE, &cull_face);
+
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glEnable(GL_CULL_FACE);
+
+        glCullFace(GL_FRONT);
+        glDepthMask(GL_FALSE);
+        glDrawElementsInstanced(GL_TRIANGLES, index_count, GL_UNSIGNED_INT, nullptr,
+                                instance_count);
+
+        glCullFace(GL_BACK);
+        glDepthMask(GL_TRUE);
+        glDrawElementsInstanced(GL_TRIANGLES, index_count, GL_UNSIGNED_INT, nullptr,
+                                instance_count);
+
+        glDisable(GL_BLEND);
+        glDepthMask(depth_mask);
+        glCullFace(cull_face);
+        if (!cull_was) {
+            glDisable(GL_CULL_FACE);
+        }
+    } else {
+        glDrawElementsInstanced(GL_TRIANGLES, index_count, GL_UNSIGNED_INT, nullptr,
+                                instance_count);
+    }
+
+    glBindVertexArray(0);
+}
+
+void Renderer::draw(const float* mvp16, const float* model16, const DrawParams& params) const {
+    if (index_count_ <= 0 || !vao_ || !glyphs_.empty()) {
+        last_draw_batches_ = 0;
+        last_gl_draw_calls_ = 0;
+        return;
+    }
+    last_draw_batches_ = 1;
+    last_gl_draw_calls_ = (params.shading == ShadingModel::Glass) ? 2 : 1;
     draw_with_(program_for_(params.shading), vao_, index_count_, mvp16, model16, params);
+}
+
+void Renderer::draw_glyphs_instanced(const glm::mat4* models, int count, const float* view_proj16,
+                                     const DrawParams& params) {
+    last_draw_batches_ = 0;
+    last_gl_draw_calls_ = 0;
+    if (!models || count <= 0 || glyphs_.empty()) {
+        return;
+    }
+    const int n = std::min(count, static_cast<int>(glyphs_.size()));
+    if (!instance_vbo_) {
+        glGenBuffers(1, &instance_vbo_);
+    }
+
+    // 按 fingerprint 首次出现顺序合批
+    std::vector<std::uint64_t> order;
+    std::unordered_map<std::uint64_t, std::vector<int>> groups;
+    order.reserve(static_cast<std::size_t>(n));
+    for (int i = 0; i < n; ++i) {
+        const auto& slot = glyphs_[static_cast<std::size_t>(i)];
+        if (slot.fingerprint == 0 || slot.index_count <= 0) {
+            continue;
+        }
+        auto& idxs = groups[slot.fingerprint];
+        if (idxs.empty()) {
+            order.push_back(slot.fingerprint);
+        }
+        idxs.push_back(i);
+    }
+
+    const ProgramLocs& locs = program_for_(params.shading);
+    const int gl_per_batch = (params.shading == ShadingModel::Glass) ? 2 : 1;
+    std::vector<glm::mat4> batch_mats;
+    batch_mats.reserve(static_cast<std::size_t>(n));
+
+    for (std::uint64_t fp : order) {
+        const GpuMeshEntry* entry = pool_.find(fp);
+        if (!entry || !entry->vao || entry->index_count <= 0) {
+            continue;
+        }
+        const auto& idxs = groups[fp];
+        batch_mats.clear();
+        for (int i : idxs) {
+            batch_mats.push_back(models[i]);
+        }
+
+        glBindBuffer(GL_ARRAY_BUFFER, instance_vbo_);
+        glBufferData(GL_ARRAY_BUFFER,
+                     static_cast<GLsizeiptr>(batch_mats.size() * sizeof(glm::mat4)),
+                     batch_mats.data(), GL_DYNAMIC_DRAW);
+
+        draw_instanced_with_(locs, entry->vao, entry->index_count,
+                             static_cast<int>(batch_mats.size()), view_proj16, params);
+        ++last_draw_batches_;
+        last_gl_draw_calls_ += gl_per_batch;
+    }
 }
 
 void Renderer::draw_glyph(int index, const float* mvp16, const float* model16,
@@ -378,11 +649,16 @@ void Renderer::draw_glyph(int index, const float* mvp16, const float* model16,
     if (index < 0 || index >= static_cast<int>(glyphs_.size())) {
         return;
     }
-    const GpuGlyph& g = glyphs_[static_cast<size_t>(index)];
-    if (g.index_count <= 0) {
+    const GpuGlyphSlot& g = glyphs_[static_cast<size_t>(index)];
+    if (g.index_count <= 0 || g.fingerprint == 0) {
         return;
     }
-    draw_with_(program_for_(params.shading), g.vao, g.index_count, mvp16, model16, params);
+    const GpuMeshEntry* entry = pool_.find(g.fingerprint);
+    if (!entry || !entry->vao) {
+        return;
+    }
+    draw_with_(program_for_(params.shading), entry->vao, entry->index_count, mvp16, model16,
+               params);
 }
 
 }  // namespace text3d
