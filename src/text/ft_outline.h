@@ -60,10 +60,14 @@ public:
     /* 推荐行高（像素） */
     float line_height() const;
 
+    /* 当前加载的字体路径（缓存键用） */
+    const std::string& path() const { return path_; }
+
 private:
     // 用 void* 避免头文件依赖 FreeType；.cpp 中转为 FT_Library / FT_Face
     void* library_ = nullptr;
     void* face_ = nullptr;
+    std::string path_;
 };
 
 }  // namespace text3d

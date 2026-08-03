@@ -183,6 +183,7 @@ bool FontFace::load(const std::string& font_path, int pixel_size) {
         FT_Done_FreeType(static_cast<FT_Library>(library_));
         library_ = nullptr;
     }
+    path_.clear();
 
     FT_Library library = nullptr;
     if (FT_Init_FreeType(&library) != 0) {
@@ -206,6 +207,7 @@ bool FontFace::load(const std::string& font_path, int pixel_size) {
 
     library_ = library;
     face_ = face;
+    path_ = font_path;
     return true;
 }
 
