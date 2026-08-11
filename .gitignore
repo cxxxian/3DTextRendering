@@ -12,6 +12,7 @@ third_party/glm/
 third_party/imgui/
 third_party/libtess2/
 third_party/earcut/
+third_party/clipper2/
 third_party/stb/
 third_party/glad/
 third_party/.deps_lock.json

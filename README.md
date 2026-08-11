@@ -19,7 +19,7 @@
 
 | 组件 | 获取方式 |
 |------|----------|
-| FreeType / HarfBuzz / glm / imgui / libtess2 / earcut / stb / glad | `python3 scripts/fetch_deps.py` |
+| FreeType / HarfBuzz / glm / imgui / libtess2 / earcut / Clipper2 / stb / glad | `python3 scripts/fetch_deps.py` |
 | GLFW | 本机安装（见下） |
 | OpenGL 3.3+ | 系统 / GPU 驱动（Windows 需厂商驱动，勿仅用远程桌面软光栅） |
 
