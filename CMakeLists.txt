@@ -112,13 +112,35 @@ target_include_directories(Text3DDemo PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/stb
 )
 
+# 路径宏用正斜杠，避免 Windows 反斜杠变成 C 字符串转义（如 \t）
+file(TO_CMAKE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/shaders" _TEXT3D_SHADER_DIR)
+file(TO_CMAKE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/assets" _TEXT3D_ASSETS_DIR)
+
+if(APPLE)
+    set(_TEXT3D_DEFAULT_FONT "/System/Library/Fonts/Supplemental/Arial.ttf")
+    set(_TEXT3D_ARABIC_FONT "/System/Library/Fonts/SFArabic.ttf")
+elseif(WIN32)
+    set(_TEXT3D_DEFAULT_FONT "C:/Windows/Fonts/arial.ttf")
+    # Arabic Typesetting；缺失时 main 会跳过，仍可用 assets/fonts
+    set(_TEXT3D_ARABIC_FONT "C:/Windows/Fonts/arabtype.ttf")
+else()
+    set(_TEXT3D_DEFAULT_FONT "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
+    set(_TEXT3D_ARABIC_FONT "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
+endif()
+
 # 着色器 / 资产路径：默认指向源码树，运行时可命令行覆盖字体
 target_compile_definitions(Text3DDemo PRIVATE
-    TEXT3D_SHADER_DIR="${CMAKE_CURRENT_SOURCE_DIR}/shaders"
-    TEXT3D_ASSETS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/assets"
-    TEXT3D_DEFAULT_FONT="/System/Library/Fonts/Supplemental/Arial.ttf"
-    TEXT3D_ARABIC_FONT="/System/Library/Fonts/SFArabic.ttf"
+    TEXT3D_SHADER_DIR="${_TEXT3D_SHADER_DIR}"
+    TEXT3D_ASSETS_DIR="${_TEXT3D_ASSETS_DIR}"
+    TEXT3D_DEFAULT_FONT="${_TEXT3D_DEFAULT_FONT}"
+    TEXT3D_ARABIC_FONT="${_TEXT3D_ARABIC_FONT}"
 )
+
+if(MSVC)
+    target_compile_options(Text3DDemo PRIVATE /utf-8)
+endif()
+
+find_package(OpenGL REQUIRED)
 
 target_link_libraries(Text3DDemo PRIVATE
     glad
@@ -129,12 +151,8 @@ target_link_libraries(Text3DDemo PRIVATE
     imgui
     freetype
     harfbuzz
+    OpenGL::GL
 )
-
-if(APPLE)
-    find_library(OPENGL_LIBRARY OpenGL REQUIRED)
-    target_link_libraries(Text3DDemo PRIVATE ${OPENGL_LIBRARY})
-endif()
 
 # 拷贝着色器到可执行文件旁，便于从 build/ 直接运行
 add_custom_command(TARGET Text3DDemo POST_BUILD

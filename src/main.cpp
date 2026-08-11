@@ -6,6 +6,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstring>
+#include <filesystem>
 #include <iostream>
 #include <string>
 #include <thread>
@@ -17,6 +18,13 @@
 #if defined(__APPLE__)
 #define GL_SILENCE_DEPRECATION
 #include <OpenGL/OpenGL.h>
+#endif
+
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
 #endif
 
 #include <imgui.h>
@@ -235,7 +243,7 @@ text3d::AsyncMeshBuildRequest make_mesh_build_request() {
     req.fillet = g_state.edit.fillet;
     req.inflate = g_state.edit.inflate;
     req.tess_mode = tess_mode_from_ui(g_state.edit.tess_backend);
-    req.flatness = 0.4f;
+    req.flatness = 1.0f;
     req.scale = 1.0f / 128.0f;
     req.per_glyph = g_state.anim_player.needs_per_glyph();
     req.write_cache = g_state.edit.cache_write_geometry;
@@ -408,6 +416,11 @@ void pace_frame_if_vsync_on(double frame_start) {
 }  // namespace
 
 int main(int argc, char** argv) {
+#if defined(_WIN32)
+    SetConsoleOutputCP(CP_UTF8);
+    SetConsoleCP(CP_UTF8);
+#endif
+
     const char* cli_font = nullptr;
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
@@ -428,13 +441,27 @@ int main(int argc, char** argv) {
         }
     }
 
-    g_state.fonts.push_back(
+    auto push_font_if_exists = [](text3d::FontEntry entry) {
+        namespace fs = std::filesystem;
+        std::error_code ec;
+        if (!fs::is_regular_file(entry.path, ec)) {
+            std::cerr << "[main] skip missing font: " << entry.path << "\n";
+            return;
+        }
+        g_state.fonts.push_back(std::move(entry));
+    };
+    push_font_if_exists(
         text3d::FontEntry{"system", "System Arial", TEXT3D_DEFAULT_FONT});
-    g_state.fonts.push_back(
-        text3d::FontEntry{"sf-arabic", "SF Arabic", TEXT3D_ARABIC_FONT});
+    push_font_if_exists(
+        text3d::FontEntry{"system-arabic", "System Arabic", TEXT3D_ARABIC_FONT});
     {
         const auto assets = text3d::scan_font_assets({TEXT3D_ASSETS_DIR});
         g_state.fonts.insert(g_state.fonts.end(), assets.begin(), assets.end());
+    }
+    if (g_state.fonts.empty()) {
+        std::cerr << "[main] no fonts available (system paths missing and "
+                     "assets/fonts empty)\n";
+        return 1;
     }
     if (cli_font) {
         g_state.fonts.insert(g_state.fonts.begin() + 1,

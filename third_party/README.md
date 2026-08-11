@@ -21,4 +21,4 @@ python3 scripts/fetch_deps.py
 | `stb/` | stb_image |
 | `glad/` | OpenGL 3.3 loader（glad2 生成） |
 
-系统依赖仍需本机安装：GLFW（如 `brew install glfw`）。
+系统依赖仍需本机安装：GLFW（macOS：`brew install glfw`；Windows：`vcpkg install glfw3:x64-windows`；Linux：发行版 `libglfw3-dev`）。

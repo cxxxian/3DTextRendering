@@ -20,10 +20,18 @@
 | 组件 | 获取方式 |
 |------|----------|
 | FreeType / HarfBuzz / glm / imgui / libtess2 / earcut / stb / glad | `python3 scripts/fetch_deps.py` |
-| GLFW | 本机安装（macOS：`brew install glfw`） |
-| OpenGL | 系统（macOS 使用 OpenGL.framework） |
+| GLFW | 本机安装（见下） |
+| OpenGL 3.3+ | 系统 / GPU 驱动（Windows 需厂商驱动，勿仅用远程桌面软光栅） |
 
 系统要求：CMake ≥ 3.20，C++17，Python3（拉取依赖），C99。大图/字体通过 Git LFS 管理。
+
+### 安装 GLFW
+
+| 平台 | 示例 |
+|------|------|
+| macOS | `brew install glfw` |
+| Windows | [vcpkg](https://vcpkg.io)：`vcpkg install glfw3:x64-windows`，配置时加 toolchain（见下） |
+| Linux | 发行版包，如 `sudo apt install libglfw3-dev` |
 
 ## 编译与运行
 
@@ -40,6 +48,21 @@ cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 ./build/Text3DDemo
 ```
+
+### Windows（PowerShell / cmd）
+
+```bat
+python scripts\fetch_deps.py
+
+cmake -B build -DCMAKE_BUILD_TYPE=Release ^
+  -DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake
+
+cmake --build build --config Release
+build\Release\Text3DDemo.exe
+```
+
+若 vcpkg 已集成到 CMakeUserPresets / 全局 toolchain，可省略 `-DCMAKE_TOOLCHAIN_FILE=...`。  
+默认系统字体：`C:/Windows/Fonts/arial.ttf`；阿拉伯文优先 `arabtype.ttf`（不存在则跳过，仍可用 `assets/fonts`）。
 
 指定字体：
 
