@@ -1,6 +1,6 @@
 #pragma once
 /*
- * 2D 轮廓布尔：AABB 门闩 + Clipper2 差集/相交面积。
+ * 2D 轮廓布尔：AABB 门闩 + Clipper2 并/差/相交面积。
  * 工程约定：外环 CW、孔 CCW（Y-up）；进出 Clipper 时统一翻转绕序。
  */
 
@@ -28,6 +28,11 @@ double outline_intersection_area(const GlyphOutline& a, const GlyphOutline& b);
 
 /* 轮廓绝对面积（字体单位²） */
 double outline_abs_area(const GlyphOutline& outline);
+
+/*
+ * out := Union(parts)。成功写出 out（已 clean）；失败返回 false。
+ */
+bool union_outlines(const std::vector<const GlyphOutline*>& parts, GlyphOutline& out);
 
 /*
  * subject := Difference(subject, Union(clips))。

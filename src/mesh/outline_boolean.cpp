@@ -133,6 +133,44 @@ double outline_abs_area(const GlyphOutline& outline) {
     return paths_abs_area_font_units(outline_to_clipper(outline));
 }
 
+bool union_outlines(const std::vector<const GlyphOutline*>& parts, GlyphOutline& out) {
+    if (parts.empty()) {
+        return false;
+    }
+    if (parts.size() == 1) {
+        if (!parts[0]) {
+            return false;
+        }
+        out = *parts[0];
+        return clean_glyph_outline(out) || !out.contours.empty();
+    }
+
+    Paths64 all;
+    for (const GlyphOutline* p : parts) {
+        if (!p) {
+            continue;
+        }
+        Paths64 one = outline_to_clipper(*p);
+        all.insert(all.end(), one.begin(), one.end());
+    }
+    if (all.empty()) {
+        return false;
+    }
+
+    const Paths64 result = Clipper2Lib::Union(all, FillRule::NonZero);
+    GlyphOutline local;
+    if (parts[0]) {
+        local.advance_x = parts[0]->advance_x;
+        local.bearing_x = parts[0]->bearing_x;
+        local.bearing_y = parts[0]->bearing_y;
+    }
+    if (!clipper_to_outline(result, local)) {
+        return false;
+    }
+    out = std::move(local);
+    return true;
+}
+
 bool difference_outlines(const GlyphOutline& subject,
                          const std::vector<const GlyphOutline*>& clips, GlyphOutline& out,
                          float clip_inflate_delta) {

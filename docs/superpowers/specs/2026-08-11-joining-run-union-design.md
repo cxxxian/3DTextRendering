@@ -2,10 +2,10 @@
 
 日期：2026-08-11  
 工程：`3d-text-demo/`  
-状态：设计待审  
-依赖：#16 重叠检测门闩、Clipper2、`outline_boolean`、现有 layout / 挤出 / 动画  
-取代：段内逐字 `Difference`（#16 Phase A2）与「seam 边标记」草案  
-Backlog：建议 #17
+状态：已落地  
+依赖：#16 重叠门闩、Clipper2、`outline_boolean`  
+计划：`docs/superpowers/plans/2026-08-11-joining-run-union.md`  
+Backlog：#17
 
 ## 1. 背景
 

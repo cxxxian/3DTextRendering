@@ -68,7 +68,6 @@ std::vector<std::string> split_lines(const std::string& text) {
 constexpr int kOverlapNeighborK = 2;
 constexpr float kOverlapAabbEps = 0.5f;
 constexpr double kOverlapMinArea = 1e-2;
-constexpr float kOverlapClipInflate = 0.25f;
 
 struct PreparedGlyph {
     std::uint32_t glyph_index = 0;
@@ -77,7 +76,7 @@ struct PreparedGlyph {
     GlyphOutline cleaned_local;
     GlyphOutline work_layout;
     Aabb2 aabb;
-    bool was_clipped = false;
+    bool from_run_union = false;  // 多字 Union：跳过 L1/Mesh 池
 };
 
 bool load_cleaned_outline(const FontFace& font, std::uint32_t glyph_index, float flatness,
@@ -153,7 +152,7 @@ bool extrude_prepared_glyph(const FontFace& font, const PreparedGlyph& prep,
         make_mesh_key(ok_key, extrude.tess_mode, extrude.depth, extrude.bevel, extrude.fillet,
                       extrude.inflate, opt.scale);
 
-    const bool can_use_pool = !prep.was_clipped;
+    const bool can_use_pool = !prep.from_run_union;
     if (can_use_pool && opt.mesh_pool) {
         if (const PooledGlyphMesh* hit = opt.mesh_pool->find(mesh_key)) {
             mesh_sp = hit->mesh;
@@ -167,14 +166,10 @@ bool extrude_prepared_glyph(const FontFace& font, const PreparedGlyph& prep,
     }
 
     GlyphOutline extrude_src = prep.cleaned_local;
-    if (prep.was_clipped) {
-        extrude_src = prep.work_layout;
-        translate_outline(extrude_src, -prep.origin_x, -prep.origin_y);
-    }
 
     Mesh glyph_mesh;
     bool ok = false;
-    if (opt.cache && !prep.was_clipped) {
+    if (opt.cache && !prep.from_run_union) {
         safe_cap = max_safe_edge_radius(extrude_src, opt.extrude.depth);
         const PlanarKey pk = make_planar_key(ok_key, extrude.tess_mode, extrude.depth, extrude.bevel,
                                             extrude.fillet);
@@ -195,7 +190,7 @@ bool extrude_prepared_glyph(const FontFace& font, const PreparedGlyph& prep,
         }
         ok = build_glyph_3d_from_planar(*planar_ptr, extrude, glyph_mesh, &glyph_result);
         applied_r = planar_ptr->applied_radius;
-    } else if (opt.cache && prep.was_clipped) {
+    } else if (opt.cache && prep.from_run_union) {
         safe_cap = max_safe_edge_radius(extrude_src, opt.extrude.depth);
         GlyphPlanar2D planar_local;
         if (!build_glyph_planar_from_cleaned(extrude_src, extrude, planar_local, &glyph_result)) {
@@ -300,10 +295,28 @@ bool append_shaped_line(const FontFace& font, const std::string& line,
         pen_x += sg.x_advance;
     }
 
-    // Phase A2：相邻重叠差集（后字挖掉与先字重叠墨）
-    int clipped_count = 0;
-    for (size_t j = 0; j < prepared.size(); ++j) {
-        std::vector<const GlyphOutline*> clips;
+    // Phase A2：重叠连通分量 → joining run；多字则 Clipper Union 成一块
+    const size_t n = prepared.size();
+    std::vector<int> parent(n);
+    for (size_t i = 0; i < n; ++i) {
+        parent[i] = static_cast<int>(i);
+    }
+    auto find_root = [&](int x) {
+        while (parent[static_cast<size_t>(x)] != x) {
+            parent[static_cast<size_t>(x)] = parent[static_cast<size_t>(parent[static_cast<size_t>(x)])];
+            x = parent[static_cast<size_t>(x)];
+        }
+        return x;
+    };
+    auto unite = [&](int a, int b) {
+        a = find_root(a);
+        b = find_root(b);
+        if (a != b) {
+            parent[static_cast<size_t>(b)] = a;
+        }
+    };
+
+    for (size_t j = 0; j < n; ++j) {
         for (size_t i = 0; i < j; ++i) {
             if (static_cast<int>(j - i) > kOverlapNeighborK) {
                 continue;
@@ -315,26 +328,66 @@ bool append_shaped_line(const FontFace& font, const std::string& line,
                 kOverlapMinArea) {
                 continue;
             }
-            clips.push_back(&prepared[i].work_layout);
+            unite(static_cast<int>(i), static_cast<int>(j));
         }
-        if (clips.empty()) {
+    }
+
+    std::vector<std::vector<size_t>> comps(n);
+    for (size_t i = 0; i < n; ++i) {
+        comps[static_cast<size_t>(find_root(static_cast<int>(i)))].push_back(i);
+    }
+
+    std::vector<PreparedGlyph> runs;
+    runs.reserve(n);
+    int union_runs = 0;
+    int union_glyphs = 0;
+    for (size_t r = 0; r < n; ++r) {
+        auto& members = comps[r];
+        if (members.empty()) {
+            continue;
+        }
+        std::sort(members.begin(), members.end());
+        if (members.size() == 1) {
+            runs.push_back(std::move(prepared[members[0]]));
             continue;
         }
 
-        GlyphOutline clipped;
-        if (!difference_outlines(prepared[j].work_layout, clips, clipped, kOverlapClipInflate)) {
+        std::vector<const GlyphOutline*> parts;
+        parts.reserve(members.size());
+        for (size_t idx : members) {
+            parts.push_back(&prepared[idx].work_layout);
+        }
+        GlyphOutline united;
+        if (!union_outlines(parts, united)) {
             if (result && result->fallback_reason.empty()) {
-                result->fallback_reason = "overlap_clip_failed";
+                result->fallback_reason = "run_union_failed";
+            }
+            for (size_t idx : members) {
+                runs.push_back(std::move(prepared[idx]));
             }
             continue;
         }
-        prepared[j].work_layout = std::move(clipped);
-        prepared[j].aabb = compute_outline_aabb(prepared[j].work_layout);
-        prepared[j].was_clipped = true;
-        ++clipped_count;
-    }
 
-    // Phase B：挤出
+        const Aabb2 box = compute_outline_aabb(united);
+        const float cx = 0.5f * (box.min_x + box.max_x);
+        const float cy = 0.5f * (box.min_y + box.max_y);
+        PreparedGlyph run;
+        run.glyph_index = prepared[members[0]].glyph_index;
+        run.origin_x = cx;
+        run.origin_y = cy;
+        run.cleaned_local = std::move(united);
+        translate_outline(run.cleaned_local, -cx, -cy);
+        run.work_layout = run.cleaned_local;
+        translate_outline(run.work_layout, cx, cy);
+        run.aabb = box;
+        run.from_run_union = true;
+        runs.push_back(std::move(run));
+        ++union_runs;
+        union_glyphs += static_cast<int>(members.size());
+    }
+    prepared = std::move(runs);
+
+    // Phase B：挤出（每 run 一个实例）
     for (const PreparedGlyph& prep : prepared) {
         ExtrudeOptions extrude = opt.extrude;
         extrude.timings = opt.timings;
@@ -372,9 +425,9 @@ bool append_shaped_line(const FontFace& font, const std::string& line,
         out_glyphs.push_back(std::move(inst));
     }
 
-    if (clipped_count > 0) {
-        std::cout << "[text_layout] overlap_clipped=" << clipped_count
-                  << " of_prepared=" << prepared.size() << "\n";
+    if (union_runs > 0) {
+        std::cout << "[text_layout] joining_runs_union=" << union_runs
+                  << " glyphs_merged=" << union_glyphs << " instances=" << prepared.size() << "\n";
     }
     return true;
 }

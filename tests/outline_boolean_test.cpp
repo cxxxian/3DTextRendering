@@ -48,6 +48,13 @@ int main() {
     const double area = text3d::outline_abs_area(out);
     expect(std::fabs(area - 50.0) < 1.0, "result area ~50");
 
-    std::cout << "[outline_boolean_test] PASS area=" << area << "\n";
+    text3d::GlyphOutline uni;
+    std::vector<const text3d::GlyphOutline*> parts = {&a, &b};
+    expect(text3d::union_outlines(parts, uni), "union succeeds");
+    const double uni_area = text3d::outline_abs_area(uni);
+    expect(std::fabs(uni_area - 150.0) < 2.0, "union area ~150");
+
+    std::cout << "[outline_boolean_test] PASS diff_area=" << area << " union_area=" << uni_area
+              << "\n";
     return 0;
 }
