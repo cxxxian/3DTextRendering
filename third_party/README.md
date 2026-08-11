@@ -18,6 +18,7 @@ python3 scripts/fetch_deps.py
 | `imgui/` | 调试 UI |
 | `libtess2/` | 三角化后端 |
 | `earcut/` | 三角化后端（header） |
+| `clipper2/` | 2D 多边形布尔（重叠裁剪） |
 | `stb/` | stb_image |
 | `glad/` | OpenGL 3.3 loader（glad2 生成） |
 

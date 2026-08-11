@@ -55,6 +55,15 @@
       "dest": "third_party/earcut/earcut.hpp"
     },
     {
+      "name": "clipper2",
+      "version": "1.5.4",
+      "type": "archive",
+      "url": "https://github.com/AngusJohnson/Clipper2/archive/refs/tags/Clipper2_1.5.4.tar.gz",
+      "strip_components": 1,
+      "dest": "third_party/clipper2",
+      "marker": "CPP/Clipper2Lib/include/clipper2/clipper.h"
+    },
+    {
       "name": "stb_image",
       "version": "2.30",
       "type": "file",

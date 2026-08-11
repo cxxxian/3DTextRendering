@@ -15,6 +15,7 @@ set(_TEXT3D_REQUIRED_DEPS
     third_party/glm/glm/glm.hpp
     third_party/libtess2/Source/tess.c
     third_party/earcut/earcut.hpp
+    third_party/clipper2/CPP/Clipper2Lib/include/clipper2/clipper.h
     third_party/stb/stb_image.h
 )
 foreach(_f IN LISTS _TEXT3D_REQUIRED_DEPS)
@@ -37,6 +38,16 @@ target_include_directories(libtess2 PUBLIC third_party/libtess2/Include)
 
 add_library(earcut INTERFACE)
 target_include_directories(earcut INTERFACE third_party/earcut)
+
+# Clipper2：2D 多边形布尔（字形重叠裁剪）
+set(CLIPPER2_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/third_party/clipper2/CPP/Clipper2Lib)
+add_library(clipper2 STATIC
+    ${CLIPPER2_ROOT}/src/clipper.engine.cpp
+    ${CLIPPER2_ROOT}/src/clipper.offset.cpp
+    ${CLIPPER2_ROOT}/src/clipper.rectclip.cpp
+)
+target_include_directories(clipper2 PUBLIC ${CLIPPER2_ROOT}/include)
+set_target_properties(clipper2 PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
 
 add_library(glm INTERFACE)
 target_include_directories(glm INTERFACE third_party/glm)
@@ -146,6 +157,7 @@ target_link_libraries(Text3DDemo PRIVATE
     glad
     libtess2
     earcut
+    clipper2
     glm
     glfw
     imgui
