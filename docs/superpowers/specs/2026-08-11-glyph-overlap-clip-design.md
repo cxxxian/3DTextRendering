@@ -2,9 +2,11 @@
 
 日期：2026-08-11  
 工程：`3d-text-demo/`  
-状态：设计待审  
+状态：已落地  
 依赖：现有 HB shape、contour clean、#8 两级缓存、#9 Mesh 池  
-后续：inflate 连写整体化（另开）
+后续：inflate 连写整体化（另开）  
+计划：`docs/superpowers/plans/2026-08-11-glyph-overlap-clip.md`  
+Backlog：`3D文字Demo优化Backlog.md` #16
 
 ## 1. 背景
 
