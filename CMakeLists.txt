@@ -99,6 +99,7 @@ add_executable(Text3DDemo
     src/mesh/mesh_offset_tess.cpp
     src/mesh/edge_chamfer.cpp
     src/mesh/edge_fillet.cpp
+    src/mesh/outline_boolean.cpp
     src/text/ft_outline.cpp
     src/text/hb_shaper.cpp
     src/text/text_layout.cpp
@@ -172,3 +173,15 @@ add_custom_command(TARGET Text3DDemo POST_BUILD
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders
         $<TARGET_FILE_DIR:Text3DDemo>/shaders
 )
+
+# 轮廓布尔冒烟测试（无 GLFW）
+add_executable(OutlineBooleanTest
+    tests/outline_boolean_test.cpp
+    src/mesh/outline_boolean.cpp
+    src/mesh/contour_clean.cpp
+)
+target_include_directories(OutlineBooleanTest PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+target_link_libraries(OutlineBooleanTest PRIVATE clipper2)
+set_target_properties(OutlineBooleanTest PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
