@@ -2,11 +2,11 @@
 
 日期：2026-08-11  
 工程：`3d-text-demo/`  
-状态：已落地  
+状态：已落地（段内 Difference）；**段内流程由 joining run Union 取代，见 `2026-08-11-joining-run-union-design.md`**  
 依赖：现有 HB shape、contour clean、#8 两级缓存、#9 Mesh 池  
-后续：inflate 连写整体化（另开）  
+后续：inflate 连写由 run 并集自然解决（见 #17 设计）  
 计划：`docs/superpowers/plans/2026-08-11-glyph-overlap-clip.md`  
-Backlog：`3D文字Demo优化Backlog.md` #16
+Backlog：`3D文字Demo优化Backlog.md` #16（#17 为 run 合并）
 
 ## 1. 背景
 
