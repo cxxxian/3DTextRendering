@@ -1,7 +1,7 @@
 #pragma once
 /*
  * PS 风格 Cap Inflate：帽面按到轮廓边界距离鼓包（边上天 h=0，中心 h=H）。
- * 鼓包前对帽面做中点细分（固定 + 按高度误差自适应），补内部点并压住弯中轴褶皱。
+ * 拱高 h = H·(1-(1-d/d_max)^4)；细分压弯中轴弦切误差。
  */
 
 #include "mesh/mesh_types.h"

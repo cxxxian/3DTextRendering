@@ -125,6 +125,9 @@ void refine_cap_mesh(std::vector<float>& xy, std::vector<unsigned int>& tris, in
     }
 }
 
+/* h = H·(1-(1-t)^n)，n=4 冠部更钝，削弱中轴处二阶尖峰 */
+constexpr int kArchFalloffPower = 4;
+
 float arch_height_from_d(float d, float d_max, float H) {
     if (!(d_max > kMeshEps) || !(H > kMeshEps)) {
         return 0.f;
@@ -132,7 +135,11 @@ float arch_height_from_d(float d, float d_max, float H) {
     float t = d / d_max;
     t = std::max(0.f, std::min(1.f, t));
     const float u = 1.f - t;
-    return H * (1.f - u * u);
+    float u_pow = u * u;  // u^2
+    u_pow *= u_pow;       // u^4
+    // 若以后改 n，用循环累乘；当前固定 4
+    static_assert(kArchFalloffPower == 4, "arch falloff hard-coded for n=4");
+    return H * (1.f - u_pow);
 }
 
 /* 网格边用两端 h 线性插值，会削平真实拱高；误差大说明边穿过鼓包（环状中轴尤甚） */
