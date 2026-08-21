@@ -3,10 +3,12 @@
 //
 // ORM（AO/Rough/Metal）：R=AO, G=Roughness, B=Metallic
 // glTF MR（兼容）：G=Metallic, B=Roughness（uOrmLayout=1）
+// 法线贴图：切线空间 → 世界空间，TBN 来自网格预计算切线（非屏幕导数）
 
 in vec3 vNormal;
 in vec3 vWorldPos;
 in vec2 vUV;
+in mat3 vTBN;
 
 uniform vec3 uLightDir;
 uniform vec3 uLightColor;
@@ -54,28 +56,6 @@ vec3 fresnelSchlick(float cosTheta, vec3 F0) {
     return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
 }
 
-// 无切线时用屏幕空间导数建 TBN（Mikkelsen cotangent frame）
-mat3 cotangentFrame(vec3 N, vec3 p, vec2 uv) {
-    vec3 dp1 = dFdx(p);
-    vec3 dp2 = dFdy(p);
-    vec2 duv1 = dFdx(uv);
-    vec2 duv2 = dFdy(uv);
-
-    vec3 dp2perp = cross(dp2, N);
-    vec3 dp1perp = cross(N, dp1);
-    vec3 T = dp2perp * duv1.x + dp1perp * duv2.x;
-    vec3 B = dp2perp * duv1.y + dp1perp * duv2.y;
-
-    float invmax = inversesqrt(max(dot(T, T), dot(B, B)));
-    return mat3(T * invmax, B * invmax, N);
-}
-
-vec3 applyNormalMap(vec3 N, vec3 p, vec2 uv, sampler2D nmap) {
-    vec3 mapN = texture(nmap, uv).xyz * 2.0 - 1.0;
-    mat3 TBN = cotangentFrame(normalize(N), p, uv);
-    return normalize(TBN * mapN);
-}
-
 void main() {
     vec3 albedo = uAlbedo;
     if (uUseAlbedoMap != 0) {
@@ -100,7 +80,8 @@ void main() {
 
     vec3 N = normalize(vNormal);
     if (uUseNormalMap != 0) {
-        N = applyNormalMap(N, vWorldPos, vUV, uNormalMap);
+        vec3 mapN = texture(uNormalMap, vUV).xyz * 2.0 - 1.0;
+        N = normalize(vTBN * mapN);
     }
 
     vec3 V = normalize(uCameraPos - vWorldPos);

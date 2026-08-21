@@ -74,6 +74,9 @@ void setup_vertex_attribs() {
     glEnableVertexAttribArray(2);
     glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, stride,
                           reinterpret_cast<void*>(offsetof(Vertex, u)));
+    glEnableVertexAttribArray(3);
+    glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, stride,
+                          reinterpret_cast<void*>(offsetof(Vertex, tx)));
 }
 
 void set_uniform3(int loc, const glm::vec3& v) {
@@ -197,7 +200,8 @@ void Renderer::upload_into_(unsigned int vao, unsigned int vbo, unsigned int ebo
 void Renderer::bind_instance_attribs_() const {
     const int stride = static_cast<int>(sizeof(glm::mat4));
     for (int i = 0; i < 4; ++i) {
-        const unsigned int loc = static_cast<unsigned int>(3 + i);
+        // location 0..3 = mesh；4..7 = instance mat4
+        const unsigned int loc = static_cast<unsigned int>(4 + i);
         glEnableVertexAttribArray(loc);
         glVertexAttribPointer(loc, 4, GL_FLOAT, GL_FALSE, stride,
                               reinterpret_cast<void*>(sizeof(float) * 4 * i));

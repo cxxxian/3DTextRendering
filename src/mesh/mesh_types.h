@@ -16,6 +16,7 @@ struct Vertex {
     float px, py, pz;
     float nx, ny, nz;
     float u, v;
+    float tx = 1.f, ty = 0.f, tz = 0.f, tw = 1.f;  // tangent + handedness（法线贴图 TBN）
 };
 
 /* 挤出分区：帽面 / 侧墙 / 倒角棱 / 圆角棱 */
@@ -51,5 +52,8 @@ std::string mesh_parts_format(const Mesh& mesh);
 
 /* 正面分区顶点法线是否接近平整 +Z（Inflate 鼓包会返回 false） */
 bool mesh_front_normals_are_flat(const Mesh& mesh, float eps = 1e-3f);
+
+/* 按三角 UV 累加切线并正交化；挤出完成后调用，供 PBR 法线贴图 */
+void compute_mesh_tangents(Mesh& mesh);
 
 }  // namespace text3d

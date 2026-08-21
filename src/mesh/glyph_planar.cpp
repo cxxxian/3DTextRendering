@@ -11,6 +11,7 @@
 #include "mesh/mesh_geom.h"
 #include "mesh/mesh_inflate.h"
 #include "mesh/mesh_offset_tess.h"
+#include "mesh/outline_boolean.h"
 #include "perf/perf_stats.h"
 
 #include <algorithm>
@@ -30,6 +31,14 @@ bool build_glyph_cleaned_outline(const GlyphOutline& raw, GlyphOutline& out_clea
                 result->set_fail(BuildStage::Outline, "outline clean removed all contours");
             }
             return false;
+        }
+        // 阿语等字体常用「多条重叠实心环」而不是外环+孔。
+        // 不先 Union 的话，倒角/圆角会对每条环单独内缩，重叠处撕开成镂空。
+        if (out_cleaned.contours.size() >= 2) {
+            GlyphOutline unified = out_cleaned;
+            if (unify_outline_fill(unified) && !unified.contours.empty()) {
+                out_cleaned = std::move(unified);
+            }
         }
     }
     return true;
@@ -162,6 +171,8 @@ bool build_glyph_3d_from_planar(const GlyphPlanar2D& planar, const ExtrudeOption
         }
         return false;
     }
+
+    compute_mesh_tangents(out);
 
     const int verts = static_cast<int>(out.vertices.size());
     const int tris = static_cast<int>(out.indices.size() / 3);

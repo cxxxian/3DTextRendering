@@ -185,3 +185,65 @@ target_include_directories(OutlineBooleanTest PRIVATE
 )
 target_link_libraries(OutlineBooleanTest PRIVATE clipper2)
 set_target_properties(OutlineBooleanTest PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+
+# 阿拉伯倒角镂空诊断（无 GLFW）
+add_executable(ArabicBevelDiag
+    tests/arabic_bevel_diag.cpp
+    src/mesh/mesh_extrude.cpp
+    src/mesh/glyph_planar.cpp
+    src/mesh/mesh_types.cpp
+    src/mesh/build_result.cpp
+    src/mesh/contour_clean.cpp
+    src/mesh/mesh_geom.cpp
+    src/mesh/mesh_inflate.cpp
+    src/mesh/mesh_offset_tess.cpp
+    src/mesh/edge_chamfer.cpp
+    src/mesh/edge_fillet.cpp
+    src/mesh/outline_boolean.cpp
+    src/text/ft_outline.cpp
+    src/text/hb_shaper.cpp
+    src/text/utf8.cpp
+    src/perf/perf_stats.cpp
+)
+target_include_directories(ArabicBevelDiag PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+target_link_libraries(ArabicBevelDiag PRIVATE
+    libtess2
+    earcut
+    clipper2
+    freetype
+    harfbuzz
+)
+set_target_properties(ArabicBevelDiag PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+
+# 侧面法线与几何法线一致性
+add_executable(SideNormalTest
+    tests/side_normal_test.cpp
+    src/mesh/mesh_extrude.cpp
+    src/mesh/glyph_planar.cpp
+    src/mesh/mesh_types.cpp
+    src/mesh/build_result.cpp
+    src/mesh/contour_clean.cpp
+    src/mesh/mesh_geom.cpp
+    src/mesh/mesh_inflate.cpp
+    src/mesh/mesh_offset_tess.cpp
+    src/mesh/edge_chamfer.cpp
+    src/mesh/edge_fillet.cpp
+    src/mesh/outline_boolean.cpp
+    src/text/ft_outline.cpp
+    src/perf/perf_stats.cpp
+)
+target_include_directories(SideNormalTest PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+target_link_libraries(SideNormalTest PRIVATE
+    libtess2
+    earcut
+    clipper2
+    freetype
+)
+set_target_properties(SideNormalTest PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+target_compile_definitions(SideNormalTest PRIVATE
+    TEXT3D_DEFAULT_FONT="${_TEXT3D_DEFAULT_FONT}"
+)

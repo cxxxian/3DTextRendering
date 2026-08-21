@@ -12,7 +12,7 @@ namespace text3d {
 
 void push_vertex(Mesh& m, float x, float y, float z, float nx, float ny, float nz, float u,
                  float v) {
-    m.vertices.push_back({x, y, z, nx, ny, nz, u, v});
+    m.vertices.push_back({x, y, z, nx, ny, nz, u, v, 1.f, 0.f, 0.f, 1.f});
 }
 
 void side_normal(float x0, float y0, float x1, float y1, float& nx, float& ny) {

@@ -30,6 +30,13 @@ double outline_intersection_area(const GlyphOutline& a, const GlyphOutline& b);
 double outline_abs_area(const GlyphOutline& outline);
 
 /*
+ * 把同一份 outline 里互相重叠、但并不嵌套的实心环（阿语字体常见）
+ * 并成 NonZero 填充拓扑：一条外环 + 真正的孔。
+ * 同时丢掉 Union 碎环。失败时 io 保持原样并返回 false。
+ */
+bool unify_outline_fill(GlyphOutline& io);
+
+/*
  * out := Union(parts)。成功写出 out（已 clean）；失败返回 false。
  */
 bool union_outlines(const std::vector<const GlyphOutline*>& parts, GlyphOutline& out);

@@ -55,6 +55,20 @@ Paths64 outline_to_clipper(const GlyphOutline& outline) {
     return paths;
 }
 
+constexpr float kMicroContourArea = 1.f;  // 字体单位²；阿语 Union 碎环远小于此，点/孔远大于此
+
+void drop_micro_contours(GlyphOutline& o) {
+    std::vector<Contour> kept;
+    kept.reserve(o.contours.size());
+    for (Contour& c : o.contours) {
+        const float area = std::fabs(contour_signed_area2(c)) * 0.5f;
+        if (c.points.size() >= 3 && area >= kMicroContourArea) {
+            kept.push_back(std::move(c));
+        }
+    }
+    o.contours = std::move(kept);
+}
+
 bool clipper_to_outline(const Paths64& paths, GlyphOutline& out) {
     out.contours.clear();
     out.contours.reserve(paths.size());
@@ -69,6 +83,13 @@ bool clipper_to_outline(const Paths64& paths, GlyphOutline& out) {
         }
         out.contours.push_back(std::move(c));
     }
+    if (out.contours.empty()) {
+        return false;
+    }
+    if (!clean_glyph_outline(out)) {
+        return false;
+    }
+    drop_micro_contours(out);
     if (out.contours.empty()) {
         return false;
     }
@@ -131,6 +152,28 @@ double outline_intersection_area(const GlyphOutline& a, const GlyphOutline& b) {
 
 double outline_abs_area(const GlyphOutline& outline) {
     return paths_abs_area_font_units(outline_to_clipper(outline));
+}
+
+bool unify_outline_fill(GlyphOutline& io) {
+    if (io.contours.empty()) {
+        return false;
+    }
+    const GlyphOutline backup = io;
+    const Paths64 all = outline_to_clipper(io);
+    if (all.empty()) {
+        return false;
+    }
+    const Paths64 result = Clipper2Lib::Union(all, FillRule::NonZero);
+    GlyphOutline local;
+    local.advance_x = io.advance_x;
+    local.bearing_x = io.bearing_x;
+    local.bearing_y = io.bearing_y;
+    if (!clipper_to_outline(result, local)) {
+        io = backup;
+        return false;
+    }
+    io = std::move(local);
+    return true;
 }
 
 bool union_outlines(const std::vector<const GlyphOutline*>& parts, GlyphOutline& out) {

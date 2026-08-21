@@ -4,7 +4,6 @@
 
 #include "mesh/mesh_offset_tess.h"
 
-#include "mesh/contour_clean.h"
 #include "mesh/mesh_geom.h"
 
 #include <algorithm>
@@ -162,17 +161,8 @@ bool offset_and_tess_ok(const GlyphOutline& outline, float amount, TessMode mode
     if (!build_offset_outline(outline, amount, inner)) {
         return false;
     }
-    // 内缩环与外环按下标配对，不能丢环；只清点 + 统一绕向
-    CleanOptions opt;
-    opt.drop_tiny_contours = false;
-    if (!clean_glyph_outline(inner, opt)) {
-        return false;
-    }
-    for (const Contour& c : inner.contours) {
-        if (c.points.size() < 3) {
-            return false;
-        }
-    }
+    // 棱带按下标把 outer[i] 连到 inner[i]。内缩后绝不能清点，否则点数对不上，
+    // 帽面和棱带之间会缺三角（阿语复杂外环尤其明显）。
     return try_tessellate(inner, mode, xy, tris, fallback_reason);
 }
 
