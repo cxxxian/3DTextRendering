@@ -771,6 +771,9 @@ int main(int argc, char** argv) {
         draw_params.shininess = g_state.edit.shininess;
         draw_params.opacity = g_state.edit.opacity;
         draw_params.env_strength = g_state.edit.env_strength;
+        draw_params.use_triplanar = g_state.edit.use_triplanar;
+        draw_params.triplanar_scale = g_state.edit.triplanar_scale;
+        draw_params.triplanar_sharpness = g_state.edit.triplanar_sharpness;
         if (g_state.loaded_pbr_material_index > 0 &&
             g_state.active_pbr_material.has_albedo &&
             draw_params.shading == text3d::ShadingModel::Pbr) {

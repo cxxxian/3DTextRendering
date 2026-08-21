@@ -54,6 +54,11 @@ struct DrawParams {
     unsigned int orm_map = 0;
     unsigned int normal_map = 0;
     int orm_layout = 0;
+
+    /* PBR 贴图：物体空间 Triplanar（跟字走，正侧连续）；false=顶点 UV */
+    bool use_triplanar = true;
+    float triplanar_scale = 0.02f;
+    float triplanar_sharpness = 4.f;
 };
 
 class Renderer {
@@ -113,6 +118,9 @@ private:
         int use_orm_map = -1;
         int use_normal_map = -1;
         int orm_layout = -1;
+        int use_triplanar = -1;
+        int triplanar_scale = -1;
+        int triplanar_sharpness = -1;
         int albedo_map = -1;
         int orm_map = -1;
         int normal_map = -1;

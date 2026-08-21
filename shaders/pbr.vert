@@ -19,16 +19,22 @@ uniform int uUseInstance;
 
 out vec3 vNormal;
 out vec3 vWorldPos;
+out vec3 vObjectPos;
+out vec3 vObjectNormal;
 out vec2 vUV;
 out mat3 vTBN;
+out mat3 vNormalMat;
 
 void main() {
     mat4 model = (uUseInstance != 0) ? aModel : uModel;
     vec4 world = model * vec4(aPos, 1.0);
     vWorldPos = world.xyz;
+    vObjectPos = aPos;
+    vObjectNormal = normalize(aNormal);
     vUV = aUV;
 
     mat3 normalMat = mat3(model);
+    vNormalMat = normalMat;
     vec3 N = normalize(normalMat * aNormal);
     vec3 T = normalize(normalMat * aTangent.xyz);
     T = normalize(T - N * dot(N, T));

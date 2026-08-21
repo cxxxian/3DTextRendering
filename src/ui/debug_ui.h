@@ -51,6 +51,9 @@ struct EditParams {
     int pbr_material_index = 0;  // 0 = None（用上面常量）
     bool pbr_material_changed = false;
     bool request_rescan_materials = false;
+    bool use_triplanar = true;        // 物体空间三平面（跟动画走）
+    float triplanar_scale = 0.02f;
+    float triplanar_sharpness = 4.f;
 
     const std::vector<AnimOption>* anims = nullptr;
     int anim_index = 1;

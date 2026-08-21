@@ -368,6 +368,17 @@ void debug_ui_draw(const PerfStats& perf, EditParams& edit, bool anim_playing,
                 ImGui::SliderFloat("Roughness", &edit.roughness, 0.04f, 1.f, "%.2f");
             } else {
                 ImGui::TextDisabled("Maps: Diffuse + AO/Rough/Metal + Normal(GL)");
+                ImGui::Checkbox("Triplanar (object)", &edit.use_triplanar);
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip(
+                        "On: sample by object-space XYZ (sticks with anim, seamless faces)\n"
+                        "Off: mesh UVs (front planar / side perimeter)");
+                }
+                if (edit.use_triplanar) {
+                    ImGui::SliderFloat("TP Scale", &edit.triplanar_scale, 0.002f, 5.f, "%.3f");
+                    ImGui::SliderFloat("TP Sharpness", &edit.triplanar_sharpness, 1.f, 16.f,
+                                       "%.1f");
+                }
             }
         }
 

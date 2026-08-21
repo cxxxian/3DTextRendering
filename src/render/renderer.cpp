@@ -228,6 +228,9 @@ void Renderer::cache_locations_(ProgramLocs& locs) {
     locs.use_orm_map = glGetUniformLocation(locs.program, "uUseOrmMap");
     locs.use_normal_map = glGetUniformLocation(locs.program, "uUseNormalMap");
     locs.orm_layout = glGetUniformLocation(locs.program, "uOrmLayout");
+    locs.use_triplanar = glGetUniformLocation(locs.program, "uUseTriplanar");
+    locs.triplanar_scale = glGetUniformLocation(locs.program, "uTriplanarScale");
+    locs.triplanar_sharpness = glGetUniformLocation(locs.program, "uTriplanarSharpness");
     locs.albedo_map = glGetUniformLocation(locs.program, "uAlbedoMap");
     locs.orm_map = glGetUniformLocation(locs.program, "uOrmMap");
     locs.normal_map = glGetUniformLocation(locs.program, "uNormalMap");
@@ -470,6 +473,9 @@ void Renderer::bind_draw_params_(const ProgramLocs& locs, const DrawParams& para
     set_uniform1i(locs.use_orm_map, use_orm);
     set_uniform1i(locs.use_normal_map, use_normal);
     set_uniform1i(locs.orm_layout, params.orm_layout);
+    set_uniform1i(locs.use_triplanar, params.use_triplanar ? 1 : 0);
+    set_uniform1f(locs.triplanar_scale, params.triplanar_scale);
+    set_uniform1f(locs.triplanar_sharpness, params.triplanar_sharpness);
     set_uniform1i(locs.albedo_map, 0);
     set_uniform1i(locs.orm_map, 1);
     set_uniform1i(locs.normal_map, 2);
